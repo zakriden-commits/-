@@ -1,0 +1,1186 @@
+================================================================================
+  FIRST PERSON PISTOL VIEWMODEL — ПОЛНЫЙ РАБОЧИЙ КИТ ДЛЯ ROBLOX STUDIO
+  Luau | Ноябрь 2026 | Версия 1.0 | Ветка arena/742a0681-repo
+================================================================================
+
+Автор: твой кодер-гений по Roblox-скриптам. Код большой, цельный, готовый
+к продакшену: копируй, вставляй, жми Play. Никаких «...допиши сам».
+
+--------------------------------------------------------------------------------
+1. ЧТО ПОЛУЧИТСЯ В ИГРЕ
+--------------------------------------------------------------------------------
+* При входе игрок СРАЗУ в первом лице (зум 0/0, третье лицо колесом запрещено).
+* Родные руки/торс/шляпы персонажа спрятаны, чтобы не двоились.
+* В кадре СЛЕВА виден пистолет + кисть + предплечье, ствол направлен ВПЕРЁД,
+  как будто игрок реально держит его и целится.
+* При ходьбе / беге оружие анимированно двигается: боб вверх-вниз, в стороны,
+  лёгкий roll/pitch/yaw, сглаженный вход и выход из движения.
+* В покое оружие «дышит»; при резком повороте головы инерционно отстаёт
+  (работает от мыши, геймпада и тача, даже без лок-курсора).
+* CTRL (левый ИЛИ правый) плавно, за 0.28 сек, переставляет пистолет НАПРАВО
+  вместе с рукой. Повторный CTRL возвращает НАЛЕВО. Есть кнопка «⇄» для телефона.
+* Бонус: ЛКМ = косметическая отдача + дульная вспышка (УРОНА НЕ НАНАСИТ).
+* Два режима рендера: «Camera» (свет мира 1:1) и «Viewport» (оружие никогда
+  не зарезается об стену). Переключается одной строкой в FPSettings.
+
+--------------------------------------------------------------------------------
+2. КУДА ИМЕННО ВСТАВЛЯТЬ (дерево Explorer)
+--------------------------------------------------------------------------------
+
+  ServerScriptService
+  └── FirstPersonInit          [Script]          <- FirstPersonInit.server.lua
+
+  StarterPlayer
+  └── StarterPlayerScripts
+      ├── FPSettings           [ModuleScript]    <- FPSettings.lua
+      ├── ViewmodelBuilder     [ModuleScript]    <- ViewmodelBuilder.lua
+      └── FPViewmodel          [LocalScript]     <- FPViewmodel.client.lua
+
+  ВАЖНО ПРО ИМЕНА:
+  В LocalScript стоит require(script.Parent:WaitForChild("FPSettings")) и
+  require(script.Parent:WaitForChild("ViewmodelBuilder")). Поэтому объекты
+  ModuleScript в Explorer ДОЛЖНЫ называться ровно «FPSettings» и
+  «ViewmodelBuilder» (это имя объекта в Studio, а не имя файла на диске).
+  Имя LocalScript и Script может быть любым, но выше даны рекомендуемые.
+
+  НЕ вставляй в Workspace, НЕ вставляй в StarterGui, НЕ вставляй в Tool,
+  НЕ вставляй в StarterCharacterScripts: LocalScript обязан лежать именно в
+  StarterPlayer > StarterPlayerScripts, иначе camera/PlayerGui подхватятся
+  с задержкой и будет рывок на первом кадре.
+
+  ДОПОЛНИТЕЛЬНО В STUDIO (Properties -> StarterPlayer), один раз руками:
+      CameraMode            = LockFirstPerson
+      EnableMouseLockOption = false     (чтобы Shift не кидал камеру в плечо)
+  Серверный скрипт выставит это и сам, но в Play Solo руками надёжнее.
+
+--------------------------------------------------------------------------------
+3. ПОРЯДОК УСТАНОВКИ (5 шагов)
+--------------------------------------------------------------------------------
+  1) Создай 4 объекта по дереву выше (правый клик -> Insert Object).
+  2) Переименуй два ModuleScript'а ТОЧНО как в дереве.
+  3) Скопируй код из раздела «ПОЛНЫЙ ИСХОДНЫЙ КОД» ниже (или просто возьми
+     готовые .lua-файлы из этой же папки репозитория) и вставь в каждый объект.
+  4) File -> Save to Roblox (Ctrl+S) / Publish.
+  5) F5 (Play) или Play Here. Готово.
+
+  Порядок запуска внутри кода уже соблюдён: сервер сначала фиксирует
+  LockFirstPerson -> клиент ждёт PlayerGui/CurrentCamera -> строит модель ->
+  вешает RenderStep с приоритетом 201 (ПОСЛЕ камеры Roblox, приоритет 200).
+
+--------------------------------------------------------------------------------
+4. УПРАВЛЕНИЕ
+--------------------------------------------------------------------------------
+  W A S D / стик     -> ходьба, оружие качается (боб)
+  Мышь / палец       -> поворот головы, оружие инерционно отстаёт
+  LeftCtrl / RightCtrl -> перекинуть пистолет на другую руку (туда-обратно)
+  Кнопка «⇄» (справа внизу) -> то же самое на телефоне/планшете
+  ЛКМ                -> косметическая отдача + вспышка (без урона)
+
+--------------------------------------------------------------------------------
+5. ТОНКАЯ НАСТРОЙКА (всё в FPSettings.lua, остальные файлы не трогаем)
+--------------------------------------------------------------------------------
+  RENDER_MODE = "Camera"   -> поменяй на "Viewport", если у стенок клиппится.
+  LEFT_OFFSET / RIGHT_OFFSET -> положение: -Z вперёд, -X лево, +X право, -Y низ.
+  BOB_*                    -> амплитуда и частота походной анимации.
+  SWAP_TIME                -> скорость переезда по Ctrl.
+  SWAP_KEYS                -> замени на {Enum.KeyCode.Q}, если Ctrl занят кроучем.
+  LOOK_CAMERA_GAIN         -> насколько сильно оружие отстаёт от поворота.
+  FIELD_OF_VIEW = 75       -> классический FPS-угол.
+  LOCK_MOUSE = true        -> залочить курсор, как в настоящем шутере.
+  SHOT_SOUND_ID            -> вставь "rbxassetid://...", чтобы ЛКМ звучал.
+  COLOR_SKIN_*             -> цвет кожи автоматически берётся из BodyColors.
+
+--------------------------------------------------------------------------------
+6. КАК ЭТО УСТРОЕНО (почему именно так в 2026)
+--------------------------------------------------------------------------------
+* НОЛЬ Weld / Motor6D / Humanoid / Animator. Все детали Anchored + CanCollide=false.
+  Каждый кадр ОДИН baseCFrame пересчитывает CFrame каждой детали. Нет физики ->
+  нет лага на кадр, нет дёрганья на 144/240 FPS, ничего не ломается на респавне.
+* BindToRenderStep(..., Enum.RenderPriority.Camera.Value + 1) гарантирует, что
+  стандартный PlayerModule уже посчитал CFrame камеры до нас.
+* Зеркало правой руки считается аналитически (отражение по X + инверсия Y/Z
+  поворотов), поэтому Ctrl даёт плавный МОРФИНГ, а не подмену второй модели.
+* Цвет руки читается из BodyColors.LeftArmColor -> совпадает со скином игрока.
+* HIDE_REAL_CHARACTER вешает LocalTransparencyModifier = 1 на BasePart'ы и
+  слушает DescendantAdded, чтобы поздние аксессуары тоже прятались.
+* Режим «Viewport» = ScreenGui -> ViewportFrame -> WorldModel -> отдельная
+  Camera, CFrame которой каждый кадр равен игровой. Мир физически не может
+  перекрыть оружие. Идеально для узких коридоров и дверей.
+* Серверный скрипт вообще не трогает игровую логику: только CameraMode/зум.
+
+--------------------------------------------------------------------------------
+7. ЕСЛИ ЧТО-ТО НЕ ТАК
+--------------------------------------------------------------------------------
+  Видны «настоящие» руки персонажа
+      -> проверь HIDE_REAL_CHARACTER = true и что LocalScript лежит в
+         StarterPlayerScripts (не в StarterCharacterScripts).
+  Пистолет зарезается об стену / дверь
+      -> FPSettings: RENDER_MODE = "Viewport".
+  Слишком близко / далеко / высоко
+      -> крути LEFT_OFFSET и RIGHT_OFFSET (третье число = -Z, глубина).
+ Ctrl не реагирует
+      -> другой скрипт перехватил ввод. Поменяй SWAP_KEYS, например на
+         { Enum.KeyCode.Q, Enum.KeyCode.E }, либо возвращай Sink вместо Pass.
+  Хочу прицеливание (ADS) на ПКМ, спринт-анимацию, настоящую стрельбу,
+  патроны, перезарядку, урон, рейкаст, анти-чит, репликацию выстрела
+      -> просто скажи. Добамлю отдельным большим китом с RemoteEvent +
+         серверным FastCast/Raycast + валидацией + звуками + тряской камеры.
+  Игра в Studio показывает третье лицо на 1 кадр
+      -> выставь StarterPlayer.CameraMode руками (см. п.2), сервер тоже ставит.
+
+--------------------------------------------------------------------------------
+8. ФАЙЛЫ В ЭТОЙ ПАПКЕ РЕПОЗИТОРИЯ
+--------------------------------------------------------------------------------
+  INSTALL_FIRST_PERSON_PISTOL.txt  <- ЭТОТ файл: инструкция + весь код сразу
+  FPSettings.lua                   <- настройки (ModuleScript)
+  ViewmodelBuilder.lua             <- процедурная модель (ModuleScript)
+  FPViewmodel.client.lua           <- главная логика (LocalScript)
+  FirstPersonInit.server.lua       <- принудительное 1-е лицо (Script)
+  README.md                        <- короткая навигация
+
+================================================================================
+  ПОЛНЫЙ ИСХОДНЫЙ КОД  (4 файла, копируй по очереди, ничего не пропускай)
+================================================================================
+
+
+--------------------------------------------------------------------------------
+>>> ФАЙЛ 1/4 : FPSettings.lua
+>>> КУДА     : StarterPlayer > StarterPlayerScripts > FPSettings         [ModuleScript]
+--------------------------------------------------------------------------------
+
+--[[
+    FPSettings.lua
+    ModuleScript -> StarterPlayer > StarterPlayerScripts
+
+    ЕДИНЫЙ ФАЙЛ НАСТРОЕК для «First Person Pistol Viewmodel».
+    Меняй цифры здесь, остальные скрипты трогать не надо.
+
+    Актуально: ноябрь 2026 / Roblox Studio / Luau.
+    Автор: твой кодер-гений по Roblox-скриптам :)
+--]]
+
+local Settings = {}
+
+-- =====================================================================
+-- 1. РЕНДЕР ВЬЮМОДЕЛИ
+-- =====================================================================
+-- "Camera"   -> детали живут прямо в Workspace.CurrentCamera.
+--               Свет мира совпадает 1:1, максимально дёшево.
+--               Минус: у самой стенки пистолет может на кадр «зарезаться».
+-- "Viewport" -> рендер через ViewportFrame + WorldModel + отдельная Camera.
+--               Геометрия мира НИКОГДА не перекрывает оружие (топ для шутера).
+--               Свет настраивается отдельно, чуть дороже по GPU.
+Settings.RENDER_MODE = "Camera" -- "Camera" | "Viewport"
+
+-- =====================================================================
+-- 2. КАМЕРА / ПЕРВОЕ ЛИЦО
+-- =====================================================================
+Settings.FORCE_FIRST_PERSON  = true
+Settings.CAMERA_MIN_ZOOM     = 0      -- 0 = прилипшая к голове камера
+Settings.CAMERA_MAX_ZOOM     = 0      -- 0 = запрет третьего лица колесом
+Settings.FIELD_OF_VIEW       = 75
+Settings.HIDE_REAL_CHARACTER = true   -- прячем родные руки/торс/шляпы игрока
+Settings.LOCK_MOUSE          = false  -- true = курсор залочен (чистый FPS-фил)
+Settings.DISABLE_SHIFT_LOCK  = true   -- чтобы Shift не откидывал камеру в плечо
+
+-- =====================================================================
+-- 3. УПРАВЛЕНИЕ
+-- =====================================================================
+Settings.SWAP_KEYS = {
+    Enum.KeyCode.LeftControl,
+    Enum.KeyCode.RightControl,
+}
+Settings.SWAP_TIME          = 0.28    -- сек, плавный переезд TweenService
+Settings.SHOW_TOUCH_BUTTON = true     -- кнопка «⇄» для телефона/планшета
+Settings.SHOW_HINT         = true     -- подсказка «CTRL» внизу экрана
+
+-- =====================================================================
+-- 4. ПОЛОЖЕНИЕ ОРУЖИЯ (CFrame относительно камеры)
+--    -Z = ВПЕРЁД, +Z = к глазам, -X = ЛЕВО, +X = ПРАВО, -Y = НИЗ
+--    LEFT  -> старт: пистолет слева, рука из нижнего левого угла
+--    RIGHT -> после Ctrl: пистолет справа, рука из нижнего правого угла
+-- =====================================================================
+Settings.LEFT_OFFSET = CFrame.new(-0.46, -0.40, -1.12)
+    * CFrame.Angles(math.rad(-2), math.rad(11), math.rad(-6))
+
+Settings.RIGHT_OFFSET = CFrame.new(0.46, -0.40, -1.12)
+    * CFrame.Angles(math.rad(-2), math.rad(-11), math.rad(6))
+
+-- Небольшая «дуга» при перекидывании, чтобы рука не ехала по прямой
+Settings.SWAP_ARC_LIFT = 0.035
+Settings.SWAP_ARC_YAW  = 0.050
+
+-- =====================================================================
+-- 5. АНИМАЦИЯ ХОДЬБЫ (БОБ)
+-- =====================================================================
+Settings.BOB_FREQUENCY = 9.2    -- рад/сек на полном бегу
+Settings.BOB_SIDE      = 0.026  -- влево-вправо
+Settings.BOB_UP        = 0.022  -- вверх-вниз
+Settings.BOB_FORWARD   = 0.014  -- вперёд-назад
+Settings.BOB_PITCH     = 0.030  -- радиан
+Settings.BOB_YAW       = 0.022
+Settings.BOB_ROLL      = 0.045
+Settings.BOB_SMOOTH    = 10.0   -- сглаживание входа/выхода из движения
+
+-- =====================================================================
+-- 6. ДЫХАНИЕ В ПОКОЕ
+-- =====================================================================
+Settings.IDLE_SWAY_POS = 0.007
+Settings.IDLE_SWAY_ROT = 0.010
+
+-- =====================================================================
+-- 7. СВАЙ ОТ ПОВОРОТА ГОЛОВЫ / МЫШИ
+-- =====================================================================
+Settings.LOOK_SWAY         = 0.0016 -- радиан за пиксель дельты мыши
+Settings.LOOK_CAMERA_GAIN  = 1.35   -- импульс за радиан реального поворота камеры
+Settings.LOOK_IMPULSE_CLAMP = 0.25  -- защита от скачка при телепорте
+Settings.LOOK_RETURN       = 9.0    -- как быстро возвращается к нулю
+Settings.LOOK_MAX          = 0.10   -- потолок, радиан
+
+-- =====================================================================
+-- 8. ВИЗУАЛЬНАЯ ОТДАЧА (бонус на ЛКМ, УРОНА НЕ НАНАСИТ)
+--    Хочешь настоящую стрельбу -> скажи, добавлю RemoteEvent + серверный
+--    Raycast + репликацию выстрела + хитбоксы + анти-чит.
+-- =====================================================================
+Settings.ENABLE_COSMETIC_FIRE = true
+Settings.RECOIL_KICK_BACK    = 0.075
+Settings.RECOIL_KICK_UP      = 0.045
+Settings.RECOIL_PITCH        = 0.160
+Settings.RECOIL_RETURN       = 12.0
+Settings.MUZZLE_FLASH_TIME   = 0.055
+Settings.SHOT_SOUND_ID       = ""  -- вставь "rbxassetid://...", пусто = тишина
+Settings.SHOT_VOLUME         = 0.6
+
+-- =====================================================================
+-- 9. ЦВЕТА / МАТЕРИАЛЫ
+-- =====================================================================
+Settings.COLOR_SLIDE   = Color3.fromRGB(38, 41, 48)
+Settings.COLOR_FRAME   = Color3.fromRGB(26, 28, 33)
+Settings.COLOR_GRIP    = Color3.fromRGB(22, 23, 27)
+Settings.COLOR_METAL   = Color3.fromRGB(112, 118, 128)
+Settings.COLOR_ACCENT  = Color3.fromRGB(180, 140, 70)
+Settings.COLOR_SLEEVE  = Color3.fromRGB(38, 62, 96)
+Settings.COLOR_FLASH   = Color3.fromRGB(255, 214, 120)
+
+-- Цвет кожи берётся автоматически из BodyColors.LeftArmColor персонажа.
+-- Это fallback, если BodyColors ещё не прогрузился.
+Settings.COLOR_SKIN_FALLBACK = Color3.fromRGB(226, 175, 134)
+
+-- =====================================================================
+-- 10. СЛУЖЕБНОЕ (не трогай без нужды)
+-- =====================================================================
+Settings.VIEWMODEL_NAME  = "FP_Pistol_ViewModel"
+Settings.SCREEN_GUI_NAME = "FP_Pistol_Gui"
+Settings.SWAP_GUI_NAME   = "FP_SwapButtonGui"
+-- RenderPriority.Camera == 200. Ставим 201: вьюмодель идёт ПОСЛЕ того, как
+-- стандартный PlayerModule уже посчитал CFrame камеры -> ноль рывков.
+Settings.BIND_PRIORITY   = Enum.RenderPriority.Camera.Value + 1
+Settings.BIND_NAME       = "FP_Pistol_Viewmodel_Update"
+
+return Settings
+
+--------------------------------------------------------------------------------
+>>> ФАЙЛ 2/4 : ViewmodelBuilder.lua
+>>> КУДА     : StarterPlayer > StarterPlayerScripts > ViewmodelBuilder [ModuleScript]
+--------------------------------------------------------------------------------
+
+--[[
+    ViewmodelBuilder.lua
+    ModuleScript -> StarterPlayer > StarterPlayerScripts
+
+    ПРОЦЕДУРНЫЙ ПИСТОЛЕТ + КИСТЬ + ПРЕДПЛЕЧЬЕ.
+    Никаких Weld / WeldConstraint / Motor6D / Humanoid / Animator.
+
+    Почему так (best practice 2026):
+      * все детали Anchored = true, CanCollide = false, CastShadow = false;
+      * каждый кадр мы ОДНИМ baseCFrame пересчитываем CFrame каждой детали;
+      * нет физики -> нет лага на 1 кадр, нет дёрганья при 240 FPS,
+        нет «welds ломаются на респавне»;
+      * зеркало для правой руки считается аналитически (отражение по X),
+        поэтому переезд Ctrl получается плавным морфингом, а не подменой модели.
+
+    Все локальные координаты заданы ОТНОСИТЕЛЬНО центра рукояти (root).
+    Ствол смотрит в -Z (вперёд от камеры).
+--]]
+
+local Settings = require(script.Parent:WaitForChild("FPSettings"))
+
+local Builder = {}
+Builder.__index = Builder
+
+local function V(x, y, z)
+    return Vector3.new(x, y, z)
+end
+
+local function R(x, y, z)
+    return Vector3.new(math.rad(x), math.rad(y), math.rad(z))
+end
+
+local function mirrorVec(v)
+    return V(-v.X, v.Y, v.Z)
+end
+
+local function mirrorRot(r)
+    -- Отражение по плоскости YZ: X-поворот сохраняем, Y и Z инвертируем.
+    return V(r.X, -r.Y, -r.Z)
+end
+
+local function cfFromRot(pos, rot, cylinderAlign)
+    local cf = CFrame.new(pos) * CFrame.Angles(rot.X, rot.Y, rot.Z)
+    if cylinderAlign then
+        -- Цилиндр в Roblox по умолчанию вытянут по Y -> доворачиваем в Z.
+        cf = cf * CFrame.Angles(math.rad(90), 0, 0)
+    end
+    return cf
+end
+
+-- ---------------------------------------------------------------------
+-- Создаёт одну деталь и запоминает её ЛЕВЫЙ и ПРАВЫЙ локальные CFrame.
+-- ---------------------------------------------------------------------
+function Builder:_add(s)
+    local part = Instance.new("Part")
+    part.Name            = s.Name
+    part.Size            = s.Size
+    part.Shape           = s.Shape or Enum.PartType.Block
+    part.Material        = s.Material or Enum.Material.SmoothPlastic
+    part.Color           = s.Color
+    part.Transparency    = s.Transparency or 0
+    part.Anchored        = true
+    part.CanCollide      = false
+    part.CastShadow      = false
+    part.Massless        = true
+    part.Parent          = self.Model
+
+    local leftCF, rightCF
+
+    if s.LookAt then
+        -- Для предплечья удобнее CFrame.lookAt: ось -Z смотрит на кисть.
+        leftCF = CFrame.lookAt(s.Pos, s.LookAt)
+        rightCF = s.Mirror
+            and CFrame.lookAt(mirrorVec(s.Pos), mirrorVec(s.LookAt))
+            or leftCF
+    else
+        leftCF = cfFromRot(s.Pos, s.Rot, s.CylinderAlign)
+        rightCF = s.Mirror
+            and cfFromRot(mirrorVec(s.Pos), mirrorRot(s.Rot), s.CylinderAlign)
+            or leftCF
+    end
+
+    local rec = {
+        Part             = part,
+        LeftCF           = leftCF,
+        RightCF          = rightCF,
+        BaseTransparency = part.Transparency,
+        IsFlash          = (s.IsFlash == true),
+        IsSkin           = (s.IsSkin == true),
+    }
+
+    table.insert(self.Records, rec)
+
+    if rec.IsSkin then
+        table.insert(self.SkinParts, part)
+    end
+
+    if rec.IsFlash then
+        self.FlashPart = part
+        local light = Instance.new("PointLight")
+        light.Name      = "MuzzleLight"
+        light.Color     = Settings.COLOR_FLASH
+        light.Brightness = 4
+        light.Range      = 3.5
+        light.Enabled    = false
+        light.Parent     = part
+        rec.Light        = light
+        self.FlashLight  = light
+    end
+
+    return rec
+end
+
+-- ---------------------------------------------------------------------
+-- Сборка модели
+-- ---------------------------------------------------------------------
+function Builder:_build()
+    -- ==== ЗАТВОР / РАМА / СТВОЛ ======================================
+    self:_add {
+        Name = "Frame", Size = V(0.150, 0.170, 0.580),
+        Pos = V(0, 0.050, -0.200), Rot = R(0, 0, 0),
+        Color = Settings.COLOR_FRAME, Material = Enum.Material.Metal,
+    }
+    self:_add {
+        Name = "Slide", Size = V(0.158, 0.078, 0.600),
+        Pos = V(0, 0.145, -0.205), Rot = R(0, 0, 0),
+        Color = Settings.COLOR_SLIDE, Material = Enum.Material.Metal,
+    }
+    self:_add {
+        Name = "SlideTopStripe", Size = V(0.022, 0.010, 0.500),
+        Pos = V(0, 0.188, -0.205), Rot = R(0, 0, 0),
+        Color = Settings.COLOR_ACCENT, Material = Enum.Material.Neon,
+    }
+    self:_add {
+        Name = "EjectionPort", Size = V(0.012, 0.038, 0.140),
+        Pos = V(0.084, 0.145, -0.160), Rot = R(0, 0, 0),
+        Color = Settings.COLOR_FRAME, Material = Enum.Material.Metal,
+    }
+
+    -- Насечки на затворе (с двух сторон)
+    for i = 0, 4 do
+        local z = -0.400 + i * 0.045
+        self:_add {
+            Name = "SerrationL_" .. i, Size = V(0.012, 0.050, 0.012),
+            Pos = V(0.084, 0.145, z), Rot = R(0, 0, 0),
+            Color = Settings.COLOR_METAL, Material = Enum.Material.Metal,
+        }
+        self:_add {
+            Name = "SerrationR_" .. i, Size = V(0.012, 0.050, 0.012),
+            Pos = V(-0.084, 0.145, z), Rot = R(0, 0, 0),
+            Color = Settings.COLOR_METAL, Material = Enum.Material.Metal,
+        }
+    end
+
+    self:_add {
+        Name = "Barrel", Size = V(0.075, 0.200, 0.075),
+        Pos = V(0, 0.075, -0.550), Rot = R(0, 0, 0),
+        Shape = Enum.PartType.Cylinder, CylinderAlign = true,
+        Color = Settings.COLOR_METAL, Material = Enum.Material.Metal,
+    }
+    self:_add {
+        Name = "MuzzleRing", Size = V(0.092, 0.035, 0.092),
+        Pos = V(0, 0.075, -0.655), Rot = R(0, 0, 0),
+        Shape = Enum.PartType.Cylinder, CylinderAlign = true,
+        Color = Settings.COLOR_FRAME, Material = Enum.Material.Metal,
+    }
+    self:_add {
+        Name = "FrontSight", Size = V(0.026, 0.050, 0.030),
+        Pos = V(0, 0.215, -0.470), Rot = R(0, 0, 0),
+        Color = Settings.COLOR_FRAME, Material = Enum.Material.Metal,
+    }
+    self:_add {
+        Name = "RearSight", Size = V(0.100, 0.045, 0.032),
+        Pos = V(0, 0.215, -0.015), Rot = R(0, 0, 0),
+        Color = Settings.COLOR_FRAME, Material = Enum.Material.Metal,
+    }
+    self:_add {
+        Name = "Hammer", Size = V(0.075, 0.050, 0.050),
+        Pos = V(0, 0.205, 0.065), Rot = R(0, 0, 0),
+        Color = Settings.COLOR_METAL, Material = Enum.Material.Metal,
+    }
+
+    -- ==== РУКОЯТЬ / МАГАЗИН / СПУСК ==================================
+    self:_add {
+        Name = "Grip", Size = V(0.135, 0.300, 0.170),
+        Pos = V(0, -0.150, 0.050), Rot = R(-12, 0, 0),
+        Color = Settings.COLOR_GRIP, Material = Enum.Material.SmoothPlastic,
+    }
+    self:_add {
+        Name = "GripPanelL", Size = V(0.010, 0.240, 0.130),
+        Pos = V(0.072, -0.150, 0.050), Rot = R(-12, 0, 0),
+        Color = Settings.COLOR_ACCENT, Material = Enum.Material.SmoothPlastic,
+    }
+    self:_add {
+        Name = "GripPanelR", Size = V(0.010, 0.240, 0.130),
+        Pos = V(-0.072, -0.150, 0.050), Rot = R(-12, 0, 0),
+        Color = Settings.COLOR_ACCENT, Material = Enum.Material.SmoothPlastic,
+    }
+    self:_add {
+        Name = "Magazine", Size = V(0.120, 0.090, 0.160),
+        Pos = V(0, -0.315, 0.065), Rot = R(-12, 0, 0),
+        Color = Settings.COLOR_FRAME, Material = Enum.Material.Metal,
+    }
+    self:_add {
+        Name = "TriggerGuard", Size = V(0.100, 0.022, 0.170),
+        Pos = V(0, -0.075, -0.065), Rot = R(0, 0, 0),
+        Color = Settings.COLOR_FRAME, Material = Enum.Material.Metal,
+    }
+    self:_add {
+        Name = "TriggerGuardFront", Size = V(0.100, 0.075, 0.022),
+        Pos = V(0, -0.040, -0.145), Rot = R(0, 0, 0),
+        Color = Settings.COLOR_FRAME, Material = Enum.Material.Metal,
+    }
+    self:_add {
+        Name = "Trigger", Size = V(0.020, 0.065, 0.024),
+        Pos = V(0, -0.035, -0.060), Rot = R(18, 0, 0),
+        Color = Settings.COLOR_METAL, Material = Enum.Material.Metal,
+    }
+
+    -- ==== РУКА (ЛЕВАЯ, Mirror = true -> правая считается сама) =======
+    local ELBOW_L = V(-0.280, -0.460, 0.520)
+    local HAND_L  = V(-0.020, -0.110, 0.020)
+
+    self:_add {
+        Name = "Forearm", Size = V(0.155, 0.155, 0.660),
+        Pos = ELBOW_L:Lerp(HAND_L, 0.5), LookAt = HAND_L, Mirror = true,
+        Color = Settings.COLOR_SKIN_FALLBACK,
+        Material = Enum.Material.SmoothPlastic, IsSkin = true,
+    }
+    self:_add {
+        Name = "Sleeve", Size = V(0.190, 0.190, 0.220),
+        Pos = ELBOW_L:Lerp(HAND_L, 0.14), LookAt = HAND_L, Mirror = true,
+        Color = Settings.COLOR_SLEEVE, Material = Enum.Material.Fabric,
+    }
+    self:_add {
+        Name = "Wrist", Size = V(0.150, 0.150, 0.120),
+        Pos = HAND_L:Lerp(ELBOW_L, 0.12), LookAt = HAND_L, Mirror = true,
+        Color = Settings.COLOR_SKIN_FALLBACK, IsSkin = true,
+    }
+    self:_add {
+        Name = "Palm", Size = V(0.175, 0.200, 0.200),
+        Pos = V(-0.015, -0.100, 0.015), Rot = R(-8, 6, -10), Mirror = true,
+        Color = Settings.COLOR_SKIN_FALLBACK, IsSkin = true,
+    }
+    self:_add {
+        Name = "Thumb", Size = V(0.070, 0.100, 0.090),
+        Pos = V(-0.095, -0.075, 0.020), Rot = R(0, 0, -25), Mirror = true,
+        Color = Settings.COLOR_SKIN_FALLBACK, IsSkin = true,
+    }
+    for i = 1, 4 do
+        self:_add {
+            Name = "Finger_" .. i, Size = V(0.150, 0.032, 0.075),
+            Pos = V(-0.005, -0.005 - (i - 1) * 0.045, -0.055),
+            Rot = R(0, 6, -6), Mirror = true,
+            Color = Settings.COLOR_SKIN_FALLBACK, IsSkin = true,
+        }
+    end
+
+    -- ==== ДУЛЬНАЯ ВСПЫШКА (бонус на ЛКМ) =============================
+    self:_add {
+        Name = "MuzzleFlash", Size = V(0.170, 0.170, 0.170),
+        Pos = V(0, 0.075, -0.720), Rot = R(0, 0, 0),
+        Shape = Enum.PartType.Ball, Material = Enum.Material.Neon,
+        Color = Settings.COLOR_FLASH, Transparency = 1, IsFlash = true,
+    }
+end
+
+-- ---------------------------------------------------------------------
+-- ПУБЛИЧНОЕ API
+-- ---------------------------------------------------------------------
+function Builder.new(parent)
+    local self = setmetatable({}, Builder)
+
+    self._parent   = parent
+    self.Visible   = true
+    self.Records   = {}
+    self.SkinParts = {}
+    self.FlashPart = nil
+    self.FlashLight = nil
+
+    self.Model = Instance.new("Model")
+    self.Model.Name   = Settings.VIEWMODEL_NAME
+    self.Model.Parent = parent
+
+    self:_build()
+    return self
+end
+
+-- baseCF  : CFrame камеры * смещение * все анимации
+-- blend   : 0 = левая рука, 1 = правая рука (плавно от TweenService)
+-- flash   : 0..1, прозрачность вспышки
+function Builder:Apply(baseCF, blend, flash)
+    if not self.Visible then
+        return
+    end
+
+    for _, r in ipairs(self.Records) do
+        local localCF = r.LeftCF:Lerp(r.RightCF, blend)
+        r.Part.CFrame = baseCF * localCF
+
+        if r.IsFlash then
+            r.Part.Transparency = 1 - flash
+            if r.Light then
+                r.Light.Enabled = flash > 0.02
+            end
+        end
+    end
+end
+
+function Builder:SetSkin(color)
+    for _, p in ipairs(self.SkinParts) do
+        p.Color = color
+    end
+end
+
+function Builder:SetParent(parent)
+    self._parent = parent
+    self.Model.Parent = self.Visible and parent or nil
+end
+
+function Builder:SetVisible(visible)
+    self.Visible = visible
+    self.Model.Parent = visible and self._parent or nil
+end
+
+function Builder:Destroy()
+    self.Model:Destroy()
+    table.clear(self.Records)
+    table.clear(self.SkinParts)
+end
+
+return Builder
+
+--------------------------------------------------------------------------------
+>>> ФАЙЛ 3/4 : FPViewmodel.client.lua
+>>> КУДА     : StarterPlayer > StarterPlayerScripts > FPViewmodel      [LocalScript]
+--------------------------------------------------------------------------------
+
+--[[
+    FPViewmodel.client.lua
+    LocalScript -> StarterPlayer > StarterPlayerScripts
+
+    ЧТО ДЕЛАЕТ:
+      1) Жёстко держит первое лицо (зум 0/0, CameraSubject = Humanoid).
+      2) Прячет родное тело игрока, чтобы не торчали «настоящие» руки.
+      3) Создаёт процедурный пистолет с кистью и предплечьем СЛЕВА,
+         направленный вперёд (-Z камеры), как будто игрок его держит.
+      4) При ходьбе/беге оружие анимированно качается (боб + ролл + питч),
+         в покое «дышит», при резком повороте головы инерционно отстаёт.
+      5) Ctrl (левый ИЛИ правый) плавно перекидывает пистолет НАПРАВО,
+         повторный Ctrl возвращает налево. Есть кнопка «⇄» для тач-экранов.
+      6) Бонус: ЛКМ = косметическая отдача + дульная вспышка (без урона).
+
+    ВАЖНО: скрипт НЕ трогает сервер, НЕ спавнит Tool, НЕ меняет анимации
+    персонажа -> не конфликтует с Animate, с R15/R6, с любыми датасторами.
+
+    Актуально: ноябрь 2026 / Roblox Studio / Luau.
+--]]
+
+local Players              = game:GetService("Players")
+local RunService           = game:GetService("RunService")
+local UserInputService     = game:GetService("UserInputService")
+local ContextActionService = game:GetService("ContextActionService")
+local TweenService         = game:GetService("TweenService")
+
+local Settings         = require(script.Parent:WaitForChild("FPSettings"))
+local ViewmodelBuilder = require(script.Parent:WaitForChild("ViewmodelBuilder"))
+
+local player    = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+local camera    = workspace.CurrentCamera
+assert(camera, "[FP Pistol] Workspace.CurrentCamera ещё не создан")
+
+-- =====================================================================
+-- СОСТОЯНИЕ
+-- =====================================================================
+local builder       = nil
+local renderParent  = nil
+
+local screenGui     = nil   -- для режима "Viewport"
+local worldModel    = nil
+local viewportCamera = nil
+
+local sideValue = Instance.new("NumberValue")
+sideValue.Name   = "FP_SideBlend"  -- 0 = ЛЕВАЯ, 1 = ПРАВАЯ
+sideValue.Value  = 0
+sideValue.Parent = script
+
+local sideTween = nil
+
+local bobPhase   = 0
+local idleTime   = 0
+local lastMoveAmp = 0
+local lookYaw      = 0
+local lookPitch    = 0
+local lastLookVector = nil
+local recoil       = 0
+local flashAlpha   = 0
+
+local charConns = {}
+
+-- =====================================================================
+-- РЕНДЕР-РИГ: Camera  /  ViewportFrame + WorldModel
+-- =====================================================================
+local function destroyRenderRig()
+    if screenGui then
+        screenGui:Destroy()
+        screenGui = nil
+    end
+    if worldModel then
+        worldModel:Destroy()
+        worldModel = nil
+    end
+    viewportCamera = nil
+end
+
+local function buildRenderRig()
+    destroyRenderRig()
+
+    if Settings.RENDER_MODE == "Viewport" then
+        screenGui = Instance.new("ScreenGui")
+        screenGui.Name             = Settings.SCREEN_GUI_NAME
+        screenGui.ResetOnSpawn     = false
+        screenGui.DisplayOrder     = 50
+        screenGui.IgnoreGuiInset   = true
+        screenGui.ZIndexBehavior   = Enum.ZIndexBehavior.Sibling
+        screenGui.Parent           = playerGui
+
+        local vf = Instance.new("ViewportFrame")
+        vf.Name                   = "FP_Viewport"
+        vf.Size                   = UDim2.fromScale(1, 1)
+        vf.Position               = UDim2.fromScale(0, 0)
+        vf.BackgroundTransparency = 1
+        vf.Active                 = false
+        vf.LightDirection         = Vector3.new(-0.5, -1, -0.4)
+        vf.Ambient                = Color3.fromRGB(150, 150, 162)
+        vf.LightColor             = Color3.fromRGB(255, 245, 225)
+        vf.Parent                 = screenGui
+
+        worldModel = Instance.new("WorldModel")
+        worldModel.Name   = "FP_WorldModel"
+        worldModel.Parent = vf
+
+        viewportCamera = Instance.new("Camera")
+        viewportCamera.Name        = "FP_ViewportCamera"
+        viewportCamera.FieldOfView = Settings.FIELD_OF_VIEW
+        pcall(function()
+            viewportCamera.NearPlaneZ = 0.02
+        end)
+        viewportCamera.Parent = vf
+        vf.CurrentCamera      = viewportCamera
+
+        renderParent = worldModel
+    else
+        renderParent = camera
+    end
+
+    return renderParent
+end
+
+-- Камера может пересоздаться (респавн / телепорт / Studio Reset)
+local function ensureCamera()
+    local cam = workspace.CurrentCamera
+    if cam and cam ~= camera then
+        camera = cam
+        if Settings.RENDER_MODE == "Camera" then
+            renderParent = cam
+            if builder then
+                builder:SetParent(cam)
+            end
+        end
+    end
+    return cam or camera
+end
+
+workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(ensureCamera)
+
+-- =====================================================================
+-- ПРЯЧЕМ РОДНОЙ ПЕРСОНАЖ (иначе из-под вьюмодели торчат руки R15)
+-- =====================================================================
+local function hidePart(obj)
+    if obj:IsA("BasePart") then
+        obj.LocalTransparencyModifier = 1
+        obj.CastShadow = false
+    elseif obj:IsA("Decal") or obj:IsA("Texture") then
+        obj.Transparency = 1
+    elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") then
+        obj.Enabled = false
+    end
+end
+
+local function clearCharConns()
+    for _, c in ipairs(charConns) do
+        c:Disconnect()
+    end
+    table.clear(charConns)
+end
+
+local function hideCharacter(char)
+    clearCharConns()
+    if not Settings.HIDE_REAL_CHARACTER then
+        return
+    end
+    for _, obj in ipairs(char:GetDescendants()) do
+        hidePart(obj)
+    end
+    -- Аксессуары/шляпы могут подгрузиться чуть позже -> добиваем на лету.
+    table.insert(charConns, char.DescendantAdded:Connect(hidePart))
+end
+
+-- =====================================================================
+-- ПЕРСОНАЖ / КАМЕРА ПРИ СПАВНЕ
+-- =====================================================================
+local function getHumanoid()
+    local char = player.Character
+    return char and char:FindFirstChildOfClass("Humanoid") or nil
+end
+
+local function onCharacterAdded(char)
+    local humanoid = char:WaitForChild("Humanoid", 10)
+    if not humanoid then
+        warn("[FP Pistol] Humanoid не найден в Character")
+        return
+    end
+
+    camera.CameraType    = Enum.CameraType.Custom
+    camera.CameraSubject = humanoid
+    camera.FieldOfView   = Settings.FIELD_OF_VIEW
+
+    if Settings.FORCE_FIRST_PERSON then
+        player.CameraMinZoomDistance = Settings.CAMERA_MIN_ZOOM
+        player.CameraMaxZoomDistance = Settings.CAMERA_MAX_ZOOM
+    end
+    if Settings.LOCK_MOUSE then
+        UserInputService.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
+    end
+
+    hideCharacter(char)
+
+    -- Цвет кожи берём из BodyColors игрока, чтобы рука совпадала со скином.
+    local skin = Settings.COLOR_SKIN_FALLBACK
+    local bodyColors = char:FindFirstChildOfClass("BodyColors")
+    if bodyColors then
+        pcall(function()
+            skin = bodyColors.LeftArmColor.Color
+        end)
+    end
+    if builder then
+        builder:SetSkin(skin)
+        builder:SetVisible(true)
+    end
+
+    table.insert(charConns, humanoid.Died:Connect(function()
+        if builder then
+            builder:SetVisible(false)
+        end
+    end))
+end
+
+player.CharacterAdded:Connect(onCharacterAdded)
+player.CharacterRemoving:Connect(function()
+    if builder then
+        builder:SetVisible(false)
+    end
+end)
+
+-- =====================================================================
+-- Ctrl -> ПЛАВНАЯ СМЕНА РУКИ
+-- =====================================================================
+local function toggleSide()
+    local target = (sideValue.Value < 0.5) and 1 or 0
+    if sideTween then
+        sideTween:Cancel()
+    end
+    sideTween = TweenService:Create(
+        sideValue,
+        TweenInfo.new(Settings.SWAP_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut),
+        { Value = target }
+    )
+    sideTween:Play()
+end
+
+local function onSwap(_actionName, inputState, _inputObject)
+    if inputState == Enum.UserInputState.Begin then
+        toggleSide()
+    end
+    -- Pass = не забираем ввод у чужих скриптов (например, у krouch-систем).
+    return Enum.ContextActionResult.Pass
+end
+
+ContextActionService:BindAction(
+    "FP_SwapHand",
+    onSwap,
+    false,
+    table.unpack(Settings.SWAP_KEYS)
+)
+
+-- =====================================================================
+-- ЭКРАННАЯ КНОПКА + ПОДСКАЗКА (работает и на ПК, и на телефоне)
+-- =====================================================================
+local function buildSwapButton()
+    if not Settings.SHOW_TOUCH_BUTTON and not Settings.SHOW_HINT then
+        return
+    end
+
+    local gui = Instance.new("ScreenGui")
+    gui.Name           = Settings.SWAP_GUI_NAME
+    gui.ResetOnSpawn   = false
+    gui.DisplayOrder   = 60
+    gui.IgnoreGuiInset = true
+    gui.Parent         = playerGui
+
+    if Settings.SHOW_TOUCH_BUTTON then
+        local btn = Instance.new("TextButton")
+        btn.Name                   = "SwapHandButton"
+        btn.Size                   = UDim2.fromOffset(64, 64)
+        btn.Position               = UDim2.new(1, -82, 1, -96)
+        btn.BackgroundColor3       = Color3.fromRGB(20, 22, 28)
+        btn.BackgroundTransparency = 0.35
+        btn.Text                   = "⇄"
+        btn.TextColor3             = Color3.fromRGB(255, 255, 255)
+        btn.TextSize               = 30
+        btn.Font                   = Enum.Font.GothamBold
+        btn.AutoButtonColor        = true
+        btn.Parent                 = gui
+
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0.5, 0)
+        corner.Parent = btn
+
+        btn.MouseButton1Click:Connect(toggleSide)
+    end
+
+    if Settings.SHOW_HINT then
+        local hint = Instance.new("TextLabel")
+        hint.Name                  = "Hint"
+        hint.Size                  = UDim2.fromOffset(380, 28)
+        hint.Position              = UDim2.new(0, 16, 1, -40)
+        hint.BackgroundTransparency = 1
+        hint.TextXAlignment        = Enum.TextXAlignment.Left
+        hint.Font                  = Enum.Font.Gotham
+        hint.TextSize              = 15
+        hint.TextColor3            = Color3.fromRGB(210, 215, 225)
+        hint.Text                  = "CTRL — сменить руку   ·   ЛКМ — отдача"
+        hint.Parent                = gui
+    end
+end
+
+-- =====================================================================
+-- КОСМЕТИЧЕСКИЙ ВЫСТРЕЛ (без урона)
+-- =====================================================================
+local function fire()
+    if not Settings.ENABLE_COSMETIC_FIRE then
+        return
+    end
+    recoil     = 1
+    flashAlpha = 1
+
+    if Settings.SHOT_SOUND_ID ~= "" then
+        local sound = script:FindFirstChild("FP_ShotSound")
+        if not sound then
+            sound = Instance.new("Sound")
+            sound.Name    = "FP_ShotSound"
+            sound.SoundId = Settings.SHOT_SOUND_ID
+            sound.Volume  = Settings.SHOT_VOLUME
+            sound.Parent  = script
+        end
+        sound:Play()
+    end
+end
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then
+        return
+    end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        fire()
+    end
+end)
+
+-- =====================================================================
+-- ГЛАВНЫЙ ЦИКЛ (BindToRenderStep с приоритетом ПОСЛЕ камеры Roblox)
+-- =====================================================================
+local function onRender(dt)
+    local cam = ensureCamera()
+    if not cam then
+        return
+    end
+
+    -- В режиме Viewport держим свою камеру синхронной с игровой.
+    if Settings.RENDER_MODE == "Viewport" and viewportCamera then
+        viewportCamera.CFrame      = cam.CFrame
+        viewportCamera.FieldOfView = cam.FieldOfView
+    end
+
+    local blend = math.clamp(sideValue.Value, 0, 1)
+
+    -- ---------- Скорость / боб -------------------------------------
+    local moveAmp = 0
+    local hum = getHumanoid()
+    if hum then
+        local md = hum.MoveDirection
+        local grounded = true
+        pcall(function()
+            grounded = (hum.FloorMaterial ~= Enum.Material.Air)
+        end)
+
+        if grounded and md.Magnitude > 0.01 then
+            local horiz = 0
+            local root = hum.RootPart
+            if root then
+                local ok, vel = pcall(function()
+                    return root.AssemblyLinearVelocity
+                end)
+                if not ok or typeof(vel) ~= "Vector3" then
+                    ok, vel = pcall(function()
+                        return root.Velocity
+                    end)
+                end
+                if ok and typeof(vel) == "Vector3" then
+                    horiz = Vector3.new(vel.X, 0, vel.Z).Magnitude
+                end
+            end
+            local ws = hum.WalkSpeed > 0 and hum.WalkSpeed or 16
+            local ratio = math.clamp(horiz / ws, 0, 1.35)
+            moveAmp = math.clamp(md.Magnitude, 0, 1) * ratio
+        end
+    end
+
+    lastMoveAmp = lastMoveAmp
+        + (moveAmp - lastMoveAmp) * math.clamp(dt * Settings.BOB_SMOOTH, 0, 1)
+    bobPhase = bobPhase + dt * Settings.BOB_FREQUENCY * (0.35 + lastMoveAmp)
+    idleTime = idleTime + dt
+
+    local s1 = math.sin(bobPhase)
+    local s2 = math.sin(bobPhase * 2)
+
+    local bob = CFrame.new(
+        s1 * Settings.BOB_SIDE * lastMoveAmp,
+        math.abs(s2) * Settings.BOB_UP * lastMoveAmp,
+        s2 * Settings.BOB_FORWARD * lastMoveAmp
+    ) * CFrame.Angles(
+        s1 * Settings.BOB_PITCH * lastMoveAmp,
+        s1 * Settings.BOB_YAW * lastMoveAmp,
+        s2 * Settings.BOB_ROLL * lastMoveAmp
+    )
+
+    -- ---------- Дыхание --------------------------------------------
+    local idle = CFrame.new(
+        math.sin(idleTime * 1.15) * Settings.IDLE_SWAY_POS,
+        math.sin(idleTime * 1.73) * Settings.IDLE_SWAY_POS * 0.7,
+        0
+    ) * CFrame.Angles(
+        math.sin(idleTime * 0.93) * Settings.IDLE_SWAY_ROT,
+        math.sin(idleTime * 1.31) * Settings.IDLE_SWAY_ROT * 0.6,
+        math.sin(idleTime * 0.71) * Settings.IDLE_SWAY_ROT * 0.8
+    )
+
+    -- ---------- Инерция от поворота мыши/головы --------------------
+    -- Два источника: сырая дельта мыши И реальный поворот камеры.
+    -- Второй нужен, чтобы свай работал на геймпаде, таче и без LockMouse.
+    local mouseDelta = UserInputService:GetMouseDelta()
+
+    local camYawImpulse, camPitchImpulse = 0, 0
+    local curLook = cam.CFrame.LookVector
+    if lastLookVector then
+        local d = curLook - lastLookVector
+        camYawImpulse   = math.clamp(-d.X * Settings.LOOK_CAMERA_GAIN,
+            -Settings.LOOK_IMPULSE_CLAMP, Settings.LOOK_IMPULSE_CLAMP)
+        camPitchImpulse = math.clamp( d.Y * Settings.LOOK_CAMERA_GAIN,
+            -Settings.LOOK_IMPULSE_CLAMP, Settings.LOOK_IMPULSE_CLAMP)
+    end
+    lastLookVector = curLook
+
+    local decay = 1 - math.clamp(dt * Settings.LOOK_RETURN, 0, 1)
+    lookYaw   = (lookYaw   + camYawImpulse   - mouseDelta.X * Settings.LOOK_SWAY) * decay
+    lookPitch = (lookPitch + camPitchImpulse + mouseDelta.Y * Settings.LOOK_SWAY) * decay
+    lookYaw   = math.clamp(lookYaw,   -Settings.LOOK_MAX, Settings.LOOK_MAX)
+    lookPitch = math.clamp(lookPitch, -Settings.LOOK_MAX, Settings.LOOK_MAX)
+    local look = CFrame.Angles(lookPitch, lookYaw, 0)
+
+    -- ---------- Дуга при перекидывании руки ------------------------
+    local arc = math.sin(blend * math.pi)
+    local swapArc = CFrame.new(0, arc * Settings.SWAP_ARC_LIFT, 0)
+        * CFrame.Angles(0, arc * Settings.SWAP_ARC_YAW, 0)
+
+    -- ---------- Отдача ---------------------------------------------
+    recoil     = math.max(0, recoil - dt * Settings.RECOIL_RETURN)
+    flashAlpha = math.max(0, flashAlpha - dt / math.max(Settings.MUZZLE_FLASH_TIME, 0.001))
+
+    local recoilCF = CFrame.new(
+        0,
+        recoil * Settings.RECOIL_KICK_UP,
+        recoil * Settings.RECOIL_KICK_BACK
+    ) * CFrame.Angles(recoil * Settings.RECOIL_PITCH, 0, 0)
+
+    -- ---------- Финальный CFrame -----------------------------------
+    local baseOffset = Settings.LEFT_OFFSET:Lerp(Settings.RIGHT_OFFSET, blend)
+
+    local baseCF = cam.CFrame
+        * baseOffset
+        * bob
+        * idle
+        * look
+        * swapArc
+        * recoilCF
+
+    if builder then
+        builder:Apply(baseCF, blend, flashAlpha)
+    end
+end
+
+-- =====================================================================
+-- ЗАПУСК
+-- =====================================================================
+camera = ensureCamera()
+local parent = buildRenderRig()
+builder = ViewmodelBuilder.new(parent)
+
+buildSwapButton()
+
+if player.Character then
+    onCharacterAdded(player.Character)
+end
+
+RunService:BindToRenderStep(Settings.BIND_NAME, Settings.BIND_PRIORITY, onRender)
+
+print("[FP Pistol] Готово. Первое лицо + пистолет слева. Ctrl -> направо. Режим: " .. Settings.RENDER_MODE)
+
+--------------------------------------------------------------------------------
+>>> ФАЙЛ 4/4 : FirstPersonInit.server.lua
+>>> КУДА     : ServerScriptService > FirstPersonInit                  [Script]
+--------------------------------------------------------------------------------
+
+--[[
+    FirstPersonInit.server.lua
+    Script -> ServerScriptService
+
+    ЗАЧЕМ: клиент уже ставит зум 0/0, но сервер ДОЛЖЕН заранее выставить
+    StarterPlayer.CameraMode = LockFirstPerson. Иначе в Play Solo / при первом
+    тике PlayerModule успевает один кадр показать третье лицо и дёрнуть камеру.
+
+    Что делает:
+      * LockFirstPerson для всех, кто зайдёт ПОСЛЕ старта сервера;
+      * отключает Shift-Lock (иначе камера уезжает в плечо);
+      * на всякий случай дублирует Min/MaxZoomDistance на каждого Player
+        и на каждый респавн (PlayerModule иногда перечитывает значения);
+      * всё через pcall -> не упадёт, если Roblox переименует свойство.
+
+    НЕ трогает: CharacterAutoLoads, Humanoid, анимации, Tools, DataStores.
+    Актуально: ноябрь 2026 / Roblox Studio / Luau.
+--]]
+
+local Players       = game:GetService("Players")
+local StarterPlayer = game:GetService("StarterPlayer")
+
+local function forceStarterPlayer()
+    pcall(function()
+        StarterPlayer.CameraMode = Enum.CameraMode.LockFirstPerson
+    end)
+    pcall(function()
+        StarterPlayer.EnableMouseLockOption = false
+    end)
+    -- На некоторых каналах эти два свойства живут и на StarterPlayer,
+    -- на некоторых только на Player -> потому pcall, а не прямой вызов.
+    pcall(function()
+        StarterPlayer.CameraMinZoomDistance = 0
+    end)
+    pcall(function()
+        StarterPlayer.CameraMaxZoomDistance = 0
+    end)
+end
+
+local function forcePlayerZoom(player)
+    pcall(function()
+        player.CameraMinZoomDistance = 0
+        player.CameraMaxZoomDistance = 0
+    end)
+end
+
+local function onPlayerAdded(player)
+    forcePlayerZoom(player)
+    player.CharacterAdded:Connect(function()
+        forcePlayerZoom(player)
+    end)
+end
+
+forceStarterPlayer()
+Players.PlayerAdded:Connect(onPlayerAdded)
+
+-- Уже онлайн (важно для Studio «Play» с заранее созданным игроком)
+for _, p in ipairs(Players:GetPlayers()) do
+    onPlayerAdded(p)
+end
+
+print("[FP Pistol][Server] LockFirstPerson включён, Shift-Lock выключен.")
+
+================================================================================
+  КОНЕЦ КИТА. Вопросы / следующий запрос (стрельба, ADS, спринт) -> погнали.
+================================================================================
