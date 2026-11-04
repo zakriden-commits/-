@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3D-модель бойца из фото</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0e13;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #e6e9ef; }
+  #app { position: fixed; inset: 0; }
+  canvas { display: block; }
+  #hud { position: fixed; left: 14px; top: 14px; z-index: 10; display: flex; flex-direction: column; gap: 10px; max-width: 340px; }
+  .panel { background: rgba(16,20,28,.82); border: 1px solid rgba(255,255,255,.09);
+    border-radius: 12px; padding: 12px 14px; backdrop-filter: blur(10px); }
+  h1 { font-size: 15px; margin: 0 0 4px; letter-spacing: .2px; }
+  .sub { font-size: 12px; color: #9aa4b2; margin: 0; }
+  #controls { display: none; flex-wrap: wrap; gap: 8px; align-items: center; }
+  button { background: #1d2634; color: #e6e9ef; border: 1px solid rgba(255,255,255,.12);
+    border-radius: 8px; padding: 7px 11px; font-size: 12.5px; cursor: pointer; }
+  button:hover { background: #273245; }
+  button.primary { background: #2f6fed; border-color: #2f6fed; }
+  button.primary:hover { background: #3d7bff; }
+  button:disabled { opacity: .45; cursor: default; }
+  .row { display: flex; align-items: center; gap: 8px; width: 100%; font-size: 12px; color: #9aa4b2; }
+  input[type=range] { flex: 1; accent-color: #2f6fed; }
+  #log { font-size: 12px; line-height: 1.55; color: #b7c0cd; max-height: 190px; overflow: auto; }
+  #log .ok { color: #7ee2a8; }
+  #log .err { color: #ff8f8f; }
+  #log .dim { color: #77808d; }
+  #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: rgba(8,10,14,.55); z-index: 20; pointer-events: none; }
+  #overlay.hidden { display: none; }
+  .spinner { width: 46px; height: 46px; border-radius: 50%; border: 3px solid rgba(255,255,255,.15);
+    border-top-color: #2f6fed; animation: spin 0.9s linear infinite; margin: 0 auto 12px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #overlay .box { text-align: center; background: rgba(16,20,28,.9); padding: 26px 34px; border-radius: 14px;
+    border: 1px solid rgba(255,255,255,.1); }
+  #overlay p { margin: 4px 0; font-size: 13.5px; color: #cdd5e0; }
+  #pct { font-size: 12px; color: #8b96a5; }
+  #stats { position: fixed; right: 14px; bottom: 12px; z-index: 10; font-size: 11.5px; color: #7d8794;
+    background: rgba(16,20,28,.7); padding: 6px 10px; border-radius: 8px; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/jsm/" } }
+</script>
+</head>
+<body>
+<div id="app"></div>
+
+<div id="hud">
+  <div class="panel">
+    <h1>3D-модель бойца из фото</h1>
+    <p class="sub">Рельеф строится по карте глубины (Depth Anything V2), текстура — исходное фото.</p>
+  </div>
+  <div class="panel" id="logbox"><div id="log"></div></div>
+  <div class="panel" id="controls">
+    <button id="btnRotate" class="primary">⟳ Автовращение: вкл</button>
+    <button id="btnWire">Сетка</button>
+    <button id="btnReset">Сброс вида</button>
+    <button id="btnGlb" class="primary">💾 Скачать GLB</button>
+    <button id="btnObj">📦 OBJ+MTL (zip)</button>
+    <div class="row"><span>Рельеф</span><input id="depthScale" type="range" min="0.05" max="0.5" step="0.01" value="0.22"><span id="dsVal">0.22</span></div>
+    <div class="row"><span>Детализация</span><input id="segRange" type="range" min="80" max="320" step="20" value="200"><span id="segVal">200</span></div>
+  </div>
+</div>
+
+<div id="overlay"><div class="box">
+  <div class="spinner"></div>
+  <p id="ostatus">Инициализация…</p>
+  <p id="pct"></p>
+</div></div>
+<div id="stats"></div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+
+const PHOTO_URL = './assets/fighter_photo.jpg';
+const logEl = document.getElementById('log');
+const overlay = document.getElementById('overlay');
+const ostatus = document.getElementById('ostatus');
+const pctEl = document.getElementById('pct');
+const log = (msg, cls='') => {
+  const d = document.createElement('div');
+  if (cls) d.className = cls;
+  d.textContent = msg;
+  logEl.appendChild(d);
+  logEl.scrollTop = logEl.scrollHeight;
+};
+const setStatus = (t, pct) => { ostatus.textContent = t; if (pct !== undefined) pctEl.textContent = pct; };
+
+/* ---------- three.js сцена ---------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b0e13);
+const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 0.01, 100);
+camera.position.set(0, 0, 2.1);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const key = new THREE.DirectionalLight(0xffffff, 2.2); key.position.set(1.6, 2.2, 2.6); scene.add(key);
+const rim = new THREE.DirectionalLight(0x88aaff, 1.1); rim.position.set(-2.2, 1.0, -1.8); scene.add(rim);
+const fill = new THREE.DirectionalLight(0xffd9b0, 0.5); fill.position.set(-1.4, -1.2, 1.6); scene.add(fill);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 1.4;
+controls.minDistance = 0.6; controls.maxDistance = 6;
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+let mesh = null, photoTex = null, darkMat = null, photoMat = null;
+let depthNorm = null, dw = 0, dh = 0, imgW = 1, imgH = 1;
+let lastGlbBlob = null;
+
+/* ---------- утилиты глубины ---------- */
+function boxBlur(src, w, h, r, passes) {
+  let a = src, b = new Float32Array(src.length);
+  for (let p = 0; p < passes; p++) {
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      let s = 0, c = 0;
+      for (let i = -r; i <= r; i++) { const xx = x + i; if (xx >= 0 && xx < w) { s += a[y*w+xx]; c++; } }
+      b[y*w+x] = s / c;
+    }
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      let s = 0, c = 0;
+      for (let i = -r; i <= r; i++) { const yy = y + i; if (yy >= 0 && yy < h) { s += b[yy*w+x]; c++; } }
+      a[y*w+x] = s / c;
+    }
+  }
+  return a;
+}
+function sampleDepth(u, v) { // u,v in [0,1]; v=0 верх
+  const x = u * (dw - 1), y = v * (dh - 1);
+  const x0 = Math.floor(x), y0 = Math.floor(y);
+  const x1 = Math.min(dw - 1, x0 + 1), y1 = Math.min(dh - 1, y0 + 1);
+  const fx = x - x0, fy = y - y0;
+  const a = depthNorm[y0*dw+x0], b = depthNorm[y0*dw+x1], c = depthNorm[y1*dw+x0], d = depthNorm[y1*dw+x1];
+  return a*(1-fx)*(1-fy) + b*fx*(1-fy) + c*(1-fx)*fy + d*fx*fy;
+}
+
+/* ---------- построение рельефа ---------- */
+function buildMesh(segX, depthScale) {
+  const aspect = imgW / imgH;
+  const W = aspect, H = 1.0;
+  const segY = Math.max(8, Math.round(segX * imgH / imgW));
+  const R = 2.3 * W;                       // радиус цилиндрического загиба
+  const thick = 0.05;
+
+  const nv = (segX + 1) * (segY + 1);
+  const pos = new Float32Array(nv * 2 * 3);
+  const uv = new Float32Array(nv * 2 * 2);
+  for (let iy = 0; iy <= segY; iy++) for (let ix = 0; ix <= segX; ix++) {
+    const u = ix / segX, v = iy / segY;
+    const dn = sampleDepth(u, v);
+    const x = (u - 0.5) * W, y = (0.5 - v) * H;
+    const xc = R * Math.sin(x / R), zc = R * (1 - Math.cos(x / R));
+    const iF = (iy * (segX + 1) + ix), iB = nv + iF;
+    pos[iF*3] = xc; pos[iF*3+1] = y; pos[iF*3+2] = dn * depthScale - zc;
+    pos[iB*3] = xc; pos[iB*3+1] = y; pos[iB*3+2] = -thick - dn * depthScale * 0.45 - zc;
+    uv[iF*2] = u; uv[iF*2+1] = 1 - v;
+    uv[iB*2] = u; uv[iB*2+1] = 1 - v;
+  }
+  const idxF = [], idxB = [], idxS = [];
+  for (let iy = 0; iy < segY; iy++) for (let ix = 0; ix < segX; ix++) {
+    const a = iy*(segX+1)+ix, b = a+1, c = a+(segX+1), d = c+1;
+    idxF.push(a, c, b, b, c, d);
+    idxB.push(nv+a, nv+b, nv+c, nv+b, nv+d, nv+c);
+  }
+  // юбка по периметру
+  const per = [];
+  for (let ix = 0; ix <= segX; ix++) per.push(ix);                                   // верх
+  for (let iy = 1; iy <= segY; iy++) per.push(iy*(segX+1)+segX);                     // право
+  for (let ix = segX - 1; ix >= 0; ix--) per.push(segY*(segX+1)+ix);                 // низ
+  for (let iy = segY - 1; iy >= 1; iy--) per.push(iy*(segX+1));                      // лево
+  for (let i = 0; i < per.length; i++) {
+    const f0 = per[i], f1 = per[(i+1) % per.length];
+    idxS.push(f0, f1, nv+f0, f1, nv+f1, nv+f0);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  const indices = idxF.concat(idxB, idxS);
+  g.setIndex(indices);
+  g.addGroup(0, idxF.length, 0);
+  g.addGroup(idxF.length, idxB.length, 1);
+  g.addGroup(idxF.length + idxB.length, idxS.length, 1);
+  g.computeVertexNormals();
+  return { geometry: g, tris: indices.length / 3, verts: nv * 2 };
+}
+
+function setMesh(segX, depthScale) {
+  const { geometry, tris, verts } = buildMesh(segX, depthScale);
+  if (mesh) { scene.remove(mesh); mesh.geometry.dispose(); }
+  mesh = new THREE.Mesh(geometry, [photoMat, darkMat, darkMat]);
+  scene.add(mesh);
+  document.getElementById('stats').textContent =
+    `${verts.toLocaleString('ru')} вершин · ${tris.toLocaleString('ru')} треугольников`;
+}
+
+/* ---------- загрузка фото + модели глубины ---------- */
+async function loadTransformers() {
+  const cdns = [
+    'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3',
+    'https://unpkg.com/@huggingface/transformers@3',
+  ];
+  for (const url of cdns) {
+    try { return await import(/* @vite-ignore */ url); } catch (e) { log('CDN недоступен: ' + url, 'dim'); }
+  }
+  throw new Error('Не удалось загрузить transformers.js (проверьте доступ к CDN)');
+}
+
+async function main() {
+  log('Загрузка фото…');
+  const img = await new Promise((res, rej) => {
+    const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = PHOTO_URL;
+  });
+  imgW = img.naturalWidth; imgH = img.naturalHeight;
+  photoTex = new THREE.TextureLoader().load(PHOTO_URL);
+  photoTex.colorSpace = THREE.SRGBColorSpace;
+  photoTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  photoMat = new THREE.MeshStandardMaterial({ map: photoTex, roughness: 0.52, metalness: 0.02, side: THREE.FrontSide });
+  darkMat = new THREE.MeshStandardMaterial({ color: 0x1a1e26, roughness: 0.85, metalness: 0.0 });
+
+  setStatus('Загрузка нейросети глубины (Depth Anything V2)…');
+  log('Загрузка модели глубины в браузере…');
+  const tf = await loadTransformers();
+  tf.env.allowLocalModels = false;
+
+  const device = navigator.gpu ? 'webgpu' : 'wasm';
+  const models = ['onnx-community/depth-anything-v2-small', 'Xenova/depth-anything-small-hq'];
+  let estimator = null, usedModel = '';
+  for (const m of models) {
+    for (const dtype of (device === 'webgpu' ? ['fp32', 'q8'] : ['q8', 'fp32'])) {
+      try {
+        setStatus(`Загрузка модели: ${m} (${dtype}, ${device})…`);
+        estimator = await tf.pipeline('depth-estimation', m, {
+          dtype, device,
+          progress_callback: (p) => {
+            if (p.status === 'progress' && p.total) setStatus('Загрузка модели глубины…', Math.round(p.progress || 0) + '%');
+          },
+        });
+        usedModel = `${m} · ${dtype} · ${device}`;
+        break;
+      } catch (e) { log(`  ${m}/${dtype}: недоступно`, 'dim'); }
+    }
+    if (estimator) break;
+  }
+  if (!estimator) throw new Error('Не удалось загрузить модель глубины ни с одного зеркала');
+  log('Модель глубины: ' + usedModel, 'ok');
+
+  setStatus('Расчёт карты глубины…');
+  log('Расчёт карты глубины…');
+  const t0 = performance.now();
+  const out = await estimator(PHOTO_URL);
+  const dimg = out.depth;                       // RawImage (gray или RGBA)
+  dw = dimg.width; dh = dimg.height;
+  const raw = dimg.data;
+  const chans = dimg.channels || (raw.length / (dw * dh));
+  const disp = new Float32Array(dw * dh);
+  for (let i = 0; i < dw * dh; i++) disp[i] = chans === 1 ? raw[i] : raw[i * 4];
+  log(`Глубина рассчитана за ${((performance.now() - t0) / 1000).toFixed(1)} с (${dw}×${dh})`, 'ok');
+
+  // робастная нормализация + сглаживание
+  const sorted = Float32Array.from(disp).sort();
+  const lo = sorted[Math.floor(sorted.length * 0.005)];
+  const hi = sorted[Math.floor(sorted.length * 0.995)];
+  for (let i = 0; i < disp.length; i++) disp[i] = Math.min(1, Math.max(0, (disp[i] - lo) / (hi - lo || 1)));
+  depthNorm = boxBlur(disp, dw, dh, 2, 2);
+
+  // отдаём карту глубины на сервер
+  try {
+    const c = document.createElement('canvas'); c.width = dw; c.height = dh;
+    const ctx = c.getContext('2d'); const id = ctx.createImageData(dw, dh);
+    for (let i = 0; i < dw * dh; i++) {
+      const v = Math.round(depthNorm[i] * 255);
+      id.data[i*4] = v; id.data[i*4+1] = v; id.data[i*4+2] = v; id.data[i*4+3] = 255;
+    }
+    ctx.putImageData(id, 0, 0);
+    c.toBlob(b => fetch('./upload?name=depth.png', { method: 'POST', body: b }).catch(() => {}), 'image/png');
+  } catch (e) { /* необязательно */ }
+
+  setStatus('Построение 3D-рельефа…');
+  setMesh(+document.getElementById('segRange').value, +document.getElementById('depthScale').value);
+  overlay.classList.add('hidden');
+  document.getElementById('controls').style.display = 'flex';
+  log('3D-модель построена. GLB сохраняется в репозиторий…', 'ok');
+  exportGlb(true);
+}
+
+/* ---------- экспорт ---------- */
+function exportGlb(auto) {
+  return new Promise((resolve) => {
+    const exporter = new GLTFExporter();
+    exporter.parse(mesh, (glb) => {
+      lastGlbBlob = new Blob([glb], { type: 'model/gltf-binary' });
+      const mb = (lastGlbBlob.size / 1e6).toFixed(1);
+      log(`GLB собран: ${mb} МБ`, 'ok');
+      if (auto) {
+        fetch('./upload?name=fighter_relief.glb', { method: 'POST', body: lastGlbBlob })
+          .then(r => r.ok ? log('GLB сохранён в model/fighter_relief.glb (+ OBJ/MTL генерируются сервером)', 'ok')
+                          : log('Сервер не принял файл (' + r.status + ')', 'err'))
+          .catch(() => log('Не удалось сохранить на сервер', 'err'))
+          .finally(() => resolve());
+      } else resolve();
+    }, (e) => { log('Ошибка экспорта: ' + e, 'err'); resolve(); }, { binary: true });
+  });
+}
+
+/* ---------- UI ---------- */
+document.getElementById('btnRotate').onclick = (e) => {
+  controls.autoRotate = !controls.autoRotate;
+  e.target.textContent = '⟳ Автовращение: ' + (controls.autoRotate ? 'вкл' : 'выкл');
+};
+document.getElementById('btnWire').onclick = () => {
+  const w = !photoMat.wireframe; photoMat.wireframe = w; darkMat.wireframe = w;
+};
+document.getElementById('btnReset').onclick = () => {
+  camera.position.set(0, 0, 2.1); controls.target.set(0, 0, 0); controls.update();
+};
+document.getElementById('btnGlb').onclick = async () => {
+  await exportGlb(false);
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(lastGlbBlob); a.download = 'fighter_relief.glb'; a.click();
+};
+document.getElementById('btnObj').onclick = () => { location.href = './download/obj.zip'; };
+let rebuildTimer = null;
+const onRebuild = () => {
+  clearTimeout(rebuildTimer);
+  rebuildTimer = setTimeout(() => {
+    if (!depthNorm) return;
+    setMesh(+document.getElementById('segRange').value, +document.getElementById('depthScale').value);
+  }, 120);
+};
+document.getElementById('depthScale').oninput = (e) => {
+  document.getElementById('dsVal').textContent = (+e.target.value).toFixed(2); onRebuild();
+};
+document.getElementById('segRange').oninput = (e) => {
+  document.getElementById('segVal').textContent = e.target.value; onRebuild();
+};
+
+(function tick() { requestAnimationFrame(tick); controls.update(); renderer.render(scene, camera); })();
+
+main().catch((e) => {
+  console.error(e);
+  setStatus('Ошибка');
+  pctEl.textContent = '';
+  log('Ошибка: ' + (e && e.message ? e.message : e), 'err');
+  overlay.querySelector('.spinner').style.display = 'none';
+});
+</script>
+</body>
+</html>

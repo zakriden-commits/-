@@ -1,0 +1,23 @@
+{
+  "name": "fighter-photo-to-3d",
+  "version": "1.0.0",
+  "description": "Photo -> textured 3D relief (Depth Anything V2 in browser + three.js)",
+  "main": "index.js",
+  "scripts": {
+    "start": "python3 server.py"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zakriden-commits/-.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/zakriden-commits/-/issues"
+  },
+  "homepage": "https://github.com/zakriden-commits/-#readme",
+  "dependencies": {
+    "three": "^0.169.0"
+  }
+}
