@@ -7,6 +7,7 @@ on:
 
 jobs:
   build:
+    if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -34,6 +35,9 @@ jobs:
         run: |
           set -o pipefail
           ./gradlew assembleDebug --stacktrace 2>&1 | tee gradle-build.log
+          echo "=== LS ==="
+          ls -R app/build 2>&1 | head -n 300
+          find app -name "*.apk" 2>&1 | head -n 20
 
       - name: Upload APK
         if: success()
@@ -48,28 +52,21 @@ jobs:
         with:
           tag_name: v1.0-${{ github.run_number }}
           name: "Ragdoll Sasny v1.0 #${{ github.run_number }}"
-          body: "APK готов! Скачай app-debug.apk"
+          body: "APK готов! Скачай app-debug.apk — Ragdoll Sasny с разрушаемым городом"
           files: app/build/outputs/apk/debug/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload log via API on failure
+      - name: Save log on failure
         if: failure()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Uploading gradle log via contents API..."
-          # limit to 90k for API (max 1MB but base64 expands)
-          head -n 600 gradle-build.log > /tmp/log_trunc.txt
-          ls -R app/build 2>&1 | head -n 200 >> /tmp/log_trunc.txt || true
-          find app -name "*.apk" 2>&1 >> /tmp/log_trunc.txt || true
-          B64=$(base64 -w 0 /tmp/log_trunc.txt)
-          # try to get existing sha
-          SHA=$(curl -s -H "Authorization: token $GH_TOKEN" -H "Accept: application/vnd.github.v3+json" "https://api.github.com/repos/zakriden-commits/-/contents/build-failure.log?ref=arena/e132f078-repo" | jq -r '.sha // empty')
-          echo "Existing SHA: $SHA"
-          if [ -n "$SHA" ]; then
-            curl -s -X PUT -H "Authorization: token $GH_TOKEN" -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/zakriden-commits/-/contents/build-failure.log -d "{\"message\":\"ci: build log $GITHUB_RUN_ID\",\"content\":\"$B64\",\"sha\":\"$SHA\",\"branch\":\"arena/e132f078-repo\"}" | head -n 50
-          else
-            curl -s -X PUT -H "Authorization: token $GH_TOKEN" -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/zakriden-commits/-/contents/build-failure.log -d "{\"message\":\"ci: build log $GITHUB_RUN_ID\",\"content\":\"$B64\",\"branch\":\"arena/e132f078-repo\"}" | head -n 50
-          fi
-          echo "Done"
+          echo "Saving failure log to repo [skip ci]"
+          mkdir -p build-logs
+          cp gradle-build.log build-logs/build-${{ github.run_number }}.log || echo "no log"
+          ls -R app/build 2>&1 | head -n 500 >> build-logs/build-${{ github.run_number }}.log || true
+          find app -name "*.apk" 2>&1 >> build-logs/build-${{ github.run_number }}.log || true
+          git config user.name "ci-bot"
+          git config user.email "ci@github.com"
+          git add build-logs/
+          git commit -m "ci: build log ${{ github.run_number }} [skip ci]" || echo "nothing to commit"
+          git push origin HEAD:arena/e132f078-repo || echo "push failed"
