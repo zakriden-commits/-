@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "CSGF — кнопка Итог",
+  "version": "1.0.0",
+  "description": "Перемещает ленту джекпота к конечной позиции по нажатию кнопки.",
+  "content_scripts": [{
+    "matches": ["https://csgf.cc/*"],
+    "js": ["itog.js"],
+    "run_at": "document_idle",
+    "world": "MAIN"
+  }]
+}
