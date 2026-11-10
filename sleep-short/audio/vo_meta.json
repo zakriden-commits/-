@@ -1,0 +1,34 @@
+{
+ "vo_1_hook": {
+  "dur": 10.8905,
+  "file": "audio/proc/vo_1_hook.wav"
+ },
+ "vo_2_day1": {
+  "dur": 13.7514,
+  "file": "audio/proc/vo_2_day1.wav"
+ },
+ "vo_3_day2": {
+  "dur": 11.5347,
+  "file": "audio/proc/vo_3_day2.wav"
+ },
+ "vo_4_day3": {
+  "dur": 13.1972,
+  "file": "audio/proc/vo_4_day3.wav"
+ },
+ "vo_5_day4": {
+  "dur": 6.447,
+  "file": "audio/proc/vo_5_day4.wav"
+ },
+ "vo_6_day5": {
+  "dur": 11.0156,
+  "file": "audio/proc/vo_6_day5.wav"
+ },
+ "vo_7_day7": {
+  "dur": 12.3394,
+  "file": "audio/proc/vo_7_day7.wav"
+ },
+ "vo_8_outro": {
+  "dur": 7.454,
+  "file": "audio/proc/vo_8_outro.wav"
+ }
+}
