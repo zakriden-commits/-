@@ -31,13 +31,9 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Build Debug APK
-        id: build
         run: |
           set -o pipefail
           ./gradlew assembleDebug --stacktrace 2>&1 | tee gradle-build.log
-          echo "=== LIST ==="
-          ls -R app/build 2>&1 | head -n 200
-          find app -name "*.apk" 2>&1 | head -n 20
 
       - name: Upload APK
         if: success()
@@ -57,18 +53,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Post log to gist on failure
+      - name: Report failure to issue
         if: failure()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Creating gist with build log..."
-          # take first 8000 chars for api limit
-          head -c 8000 gradle-build.log > /tmp/gist.log || true
-          # also append ls
-          ls -R app/build 2>&1 | head -n 200 >> /tmp/gist.log || true
-          gh api gists --method POST -f public=false -f description="gradle build log $GITHUB_RUN_ID" -f "files[build.log][content]=@/tmp/gist.log" --jq '.html_url' 2>&1 | tee /tmp/gist_url.txt || true
-          cat /tmp/gist_url.txt || true
-          # also try to output to summary
-          echo "## Build failure log" >> $GITHUB_STEP_SUMMARY
-          head -n 300 gradle-build.log >> $GITHUB_STEP_SUMMARY || true
+          echo "Build failed, creating issue with log"
+          LOG=$(head -c 65000 gradle-build.log | tail -c 65000)
+          # truncate to 5000 for issue body limit
+          BODY=$(head -n 200 gradle-build.log)
+          # use gh to create issue
+          gh issue create --title "Build failed run $GITHUB_RUN_ID" --body "Build log:\n\`\`\`\n$BODY\n\`\`\`" || echo "issue create failed, trying api"
+          # also try curl
+          curl -s -X POST -H "Authorization: token $GH_TOKEN" -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/zakriden-commits/-/issues -d "{\"title\":\"Build log $GITHUB_RUN_ID\",\"body\":\"\`\`\`$(head -n 120 gradle-build.log | sed 's/\"/\\"/g' | head -c 5000)\`\`\`\"}" || true
+          # also write to step summary for visibility
+          echo "## Build log" >> $GITHUB_STEP_SUMMARY
+          head -n 400 gradle-build.log >> $GITHUB_STEP_SUMMARY || true
+
