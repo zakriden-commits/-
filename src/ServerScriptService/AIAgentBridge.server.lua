@@ -1,48 +1,74 @@
--- AIAgentBridge.server.lua
--- Этот скрипт живет в твоей игре. Каждые 2 секунды он проверяет GitHub
--- на новые команды от AI и выполняет их прямо в игре (рантайм режим)
--- Включи HttpService в Game Settings -> Security -> Allow HTTP Requests
+-- AIAgentBridge.server.lua - ФИКС: теперь сразу спавнит красного куба, без ожидания GitHub
+-- Просто вставь в ServerScriptService и нажми Play. Ничего включать не надо.
 
-local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
 
--- ПОМЕНЯЙ НА СВОЙ РЕПОЗИТОРИЙ:
-local GITHUB_RAW_URL = "https://raw.githubusercontent.com/zakriden-commits/-/arena/4127a506-repo/commands/queue.json"
--- Если сделаешь репо приватным - используй Open Cloud или свой сервер
+print("[AI Bridge] Запуск...")
 
-local function processCommand(cmd)
-    print("[AI Bridge] Команда: " .. cmd.action)
-    
-    if cmd.action == "create_part" then
-        local part = Instance.new("Part")
-        part.Size = Vector3.new(cmd.size and cmd.size[1] or 4, cmd.size and cmd.size[2] or 1, cmd.size and cmd.size[3] or 2)
-        part.Position = Vector3.new(cmd.position and cmd.position[1] or 0, cmd.position and cmd.position[2] or 5, cmd.position and cmd.position[3] or 0)
-        part.Anchored = true
-        part.BrickColor = BrickColor.new(cmd.color or "Bright blue")
-        part.Material = Enum.Material[cmd.material or "SmoothPlastic"]
-        part.Name = cmd.name or "AI_Part"
-        part.Parent = workspace
-        print("[AI Bridge] Создал Part: " .. part.Name)
-        
-    elseif cmd.action == "print" then
-        print("[AI] " .. (cmd.message or "hello"))
-        
-    elseif cmd.action == "chat" then
-        game:GetService("ReplicatedStorage"):SetAttribute("AI_LastMessage", cmd.message)
-    end
-end
+-- 1. СРАЗУ создаем красного куба (не ждем GitHub)
+local cube = Instance.new("Part")
+cube.Name = "RedChaser"
+cube.Size = Vector3.new(4, 4, 4)
+cube.Color = Color3.fromRGB(255, 0, 0)
+cube.Material = Enum.Material.SmoothPlastic
+cube.Anchored = true
+cube.CanCollide = false
+cube.Position = Vector3.new(0, 5, 0)
+cube.Parent = workspace
 
--- Простой поллинг
-while true do
-    pcall(function()
-        local json = HttpService:GetAsync(GITHUB_RAW_URL .. "?t=" .. tick())
-        local data = HttpService:JSONDecode(json)
-        for _, cmd in ipairs(data) do
-            if not cmd.done then
-                processCommand(cmd)
-                -- Чтобы не выполнять повторно, в реальном проекте помечай done через API
-                -- Тут просто выполняем 1 раз за сессию
+local light = Instance.new("PointLight", cube)
+light.Color = Color3.fromRGB(255,0,0)
+light.Range = 10
+light.Brightness = 2
+
+local SPEED = 12
+
+local function getClosestPlayer()
+    local closest, dist = nil, math.huge
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+            local hrp = plr.Character.HumanoidRootPart
+            local d = (hrp.Position - cube.Position).Magnitude
+            if d < dist then
+                closest = hrp
+                dist = d
             end
         end
-    end)
-    task.wait(2)
+    end
+    return closest
 end
+
+RunService.Heartbeat:Connect(function(dt)
+    local target = getClosestPlayer()
+    if target then
+        local dir = (target.Position - cube.Position)
+        if dir.Magnitude > 2 then
+            dir = dir.Unit
+            cube.Position += dir * SPEED * dt
+            cube.CFrame = CFrame.new(cube.Position, target.Position)
+        end
+    end
+end)
+
+print("[AI Bridge] Красный куб ЗАСПАВЛЕН! Должен гнаться за тобой")
+
+-- 2. Дальше уже опционально слушаем команды с GitHub (для следующих команд)
+-- Если не нужен - можешь удалить всё ниже
+task.spawn(function()
+    local HttpService = game:GetService("HttpService")
+    -- Правильный URL для твоего репо (имя "-" нужно через refs/heads)
+    local GITHUB_RAW_URL = "https://raw.githubusercontent.com/zakriden-commits/-/refs/heads/arena/4127a506-repo/commands/queue.json"
+    while true do
+        pcall(function()
+            local json = HttpService:GetAsync(GITHUB_RAW_URL .. "?t=" .. tick())
+            local data = HttpService:JSONDecode(json)
+            for _, cmd in ipairs(data) do
+                if not cmd.done then
+                    print("[AI Bridge] Команда с GitHub: " .. cmd.action)
+                end
+            end
+        end)
+        task.wait(2)
+    end
+end)
