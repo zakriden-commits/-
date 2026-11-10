@@ -1,7 +1,5 @@
-# rendered output — distributed as a GitHub Release asset, not committed
-sleep_7_days_short.mp4
-
-# generated during the build
+# generated during the build (the mp4 itself lives in git so it can be downloaded
+# straight from GitHub — release-asset uploads are not reachable from the build sandbox)
 build/mix.wav
 build/timeline.json
 build/stills/
