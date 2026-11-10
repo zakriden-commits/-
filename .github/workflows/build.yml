@@ -54,7 +54,7 @@ jobs:
         with:
           tag_name: v1.0-${{ github.run_number }}
           name: "Ragdoll Sasny v1.0 #${{ github.run_number }}"
-          body: "APK готов! Скачай app-debug.apk"
+          body: "APK готов! Скачай app-debug.apk — Ragdoll Sasny"
           files: app/build/outputs/apk/debug/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -64,12 +64,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Saving log via contents API..."
+          echo "Saving log via contents API to ci-logs..."
           head -n 800 gradle-build.log > /tmp/log.txt 2>&1 || true
           echo "--- LS ---" >> /tmp/log.txt
-          ls -R app/build 2>&1 | head -n 300 >> /tmp/log.txt || true
+          ls -R app/build 2>&1 | head -n 400 >> /tmp/log.txt || true
           B64=$(base64 -w 0 /tmp/log.txt)
-          # create file build-logs/run-${{ github.run_number }}.log
-          echo "Posting to API..."
-          curl -s -X PUT -H "Authorization: token $GH_TOKEN" -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/zakriden-commits/-/contents/build-logs/run-${{ github.run_number }}.log -d "{\"message\":\"ci: build log ${{ github.run_number }} [skip ci]\",\"content\":\"$B64\",\"branch\":\"arena/e132f078-repo\"}" | head -n 100
+          curl -s -X PUT -H "Authorization: token $GH_TOKEN" -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/zakriden-commits/-/contents/ci-logs/run-${{ github.run_number }}.log -d "{\"message\":\"ci: build log ${{ github.run_number }} [skip ci]\",\"content\":\"$B64\",\"branch\":\"arena/e132f078-repo\"}" | head -n 20
           echo "Done"
