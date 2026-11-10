@@ -37,8 +37,11 @@ jobs:
         run: |
           set -o pipefail
           ./gradlew assembleDebug --stacktrace 2>&1 | tee gradle-build.log
+          set +o pipefail
           echo "=== LS ==="
-          ls -R app/build 2>&1 | head -n 400
+          ls -R app/build 2>&1 | head -n 400 || true
+          find app -name "*.apk" 2>&1 | head -n 20 || true
+          ls -lh app/build/outputs/apk/debug/ 2>&1 || true
 
       - name: Upload APK
         if: success()
@@ -46,6 +49,7 @@ jobs:
         with:
           name: RagdollSasny-debug-apk
           path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
 
       - name: Create Release
         if: success() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/arena/e132f078-repo')
@@ -53,8 +57,9 @@ jobs:
         with:
           tag_name: v1.0-${{ github.run_number }}
           name: "Ragdoll Sasny v1.0 #${{ github.run_number }}"
-          body: "APK готов!"
+          body: "APK готов! Скачай app-debug.apk — Ragdoll Sasny: хватай куклу за любую часть тела и кидай в город, всё разрушаемо. 3 карты."
           files: app/build/outputs/apk/debug/*.apk
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -65,14 +70,7 @@ jobs:
         run: |
           echo "Saving log via gh api..."
           head -n 600 gradle-build.log > /tmp/log.txt 2>&1 || echo "no log" > /tmp/log.txt
-          echo "--- gradle-build.log head ---" 
-          head -n 30 gradle-build.log || true
-          echo "--- ls ---"
-          ls -lh gradle-build.log || true
-          cat /tmp/log.txt | head -n 30 || true
+          ls -R app/build 2>&1 | head -n 400 >> /tmp/log.txt || true
           B64=$(base64 -w 0 /tmp/log.txt)
-          echo "B64 length ${#B64}"
-          echo "Posting..."
-          gh api repos/zakriden-commits/-/contents/ci-logs/run-${{ github.run_number }}.log --method PUT -f message="ci: build log ${{ github.run_number }} [skip ci]" -f content="$B64" -f branch="arena/e132f078-repo" 2>&1 | head -n 50 || echo "gh api failed, trying curl"
-          # fallback curl
+          gh api repos/zakriden-commits/-/contents/ci-logs/run-${{ github.run_number }}.log --method PUT -f message="ci: build log ${{ github.run_number }} [skip ci]" -f content="$B64" -f branch="arena/e132f078-repo" 2>&1 | head -n 50 || true
           curl -s -X PUT -H "Authorization: token $GH_TOKEN" -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/zakriden-commits/-/contents/ci-logs/run-${{ github.run_number }}-curl.log -d "{\"message\":\"ci: curl log ${{ github.run_number }} [skip ci]\",\"content\":\"$B64\",\"branch\":\"arena/e132f078-repo\"}" 2>&1 | head -n 50 || true
