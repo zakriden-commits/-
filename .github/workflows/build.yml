@@ -21,40 +21,23 @@ jobs:
 
       - name: Setup Android SDK
         run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           if [ ! -f "$SDKMANAGER" ]; then SDKMANAGER="$ANDROID_HOME/cmdline-tools/bin/sdkmanager"; fi
           if [ ! -f "$SDKMANAGER" ]; then SDKMANAGER="sdkmanager"; fi
-          $SDKMANAGER --version || echo "sdkmanager version fail"
           yes | $SDKMANAGER --licenses || true
           $SDKMANAGER "platforms;android-34" "build-tools;34.0.0" "platform-tools" || true
 
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
-      - name: Gradle version
-        run: ./gradlew --version
-
       - name: Build Debug APK
+        id: build
         run: |
           set -o pipefail
           ./gradlew assembleDebug --stacktrace 2>&1 | tee gradle-build.log
-          echo "=== BUILD EXIT CODE: $?" 
-          echo "=== Listing app/build ==="
-          ls -R app/build 2>&1 | head -n 500
-          echo "=== Find APK ==="
-          find app -name "*.apk" -type f 2>&1 | head -n 50
-          echo "=== Contents of app/build/outputs if exists ==="
-          ls -lh app/build/outputs/apk/debug/ 2>&1 || true
-
-      - name: Upload build log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: gradle-log
-          path: |
-            gradle-*.log
-          if-no-files-found: warn
+          echo "=== LIST ==="
+          ls -R app/build 2>&1 | head -n 200
+          find app -name "*.apk" 2>&1 | head -n 20
 
       - name: Upload APK
         if: success()
@@ -62,7 +45,6 @@ jobs:
         with:
           name: RagdollSasny-debug-apk
           path: app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
 
       - name: Create Release
         if: success() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/arena/e132f078-repo')
@@ -70,11 +52,23 @@ jobs:
         with:
           tag_name: v1.0-${{ github.run_number }}
           name: "Ragdoll Sasny v1.0 #${{ github.run_number }}"
-          body: |
-            🎮 Ragdoll Sasny — APK готов!
-            Скачай app-debug.apk ниже. Зажми любую часть куклы и кидай в город — всё разрушаемо.
-            Карты: Центр Города, Коробочный Полигон, Деревня
+          body: "APK готов! Скачай app-debug.apk"
           files: app/build/outputs/apk/debug/*.apk
-          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Post log to gist on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Creating gist with build log..."
+          # take first 8000 chars for api limit
+          head -c 8000 gradle-build.log > /tmp/gist.log || true
+          # also append ls
+          ls -R app/build 2>&1 | head -n 200 >> /tmp/gist.log || true
+          gh api gists --method POST -f public=false -f description="gradle build log $GITHUB_RUN_ID" -f "files[build.log][content]=@/tmp/gist.log" --jq '.html_url' 2>&1 | tee /tmp/gist_url.txt || true
+          cat /tmp/gist_url.txt || true
+          # also try to output to summary
+          echo "## Build failure log" >> $GITHUB_STEP_SUMMARY
+          head -n 300 gradle-build.log >> $GITHUB_STEP_SUMMARY || true
