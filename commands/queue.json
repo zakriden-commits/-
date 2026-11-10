@@ -1,0 +1,9 @@
+[
+  {
+    "id": "example-001",
+    "action": "create_script",
+    "path": "src/Workspace/Hello.server.lua",
+    "content": "print(\"Привет от Arena AI! Этот скрипт создал я через GitHub мост\")\nprint(\"Дай команду в чате и я перезапишу этот файл\")",
+    "done": false
+  }
+]
