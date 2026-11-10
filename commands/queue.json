@@ -16,5 +16,10 @@
     "action": "spawn_chasers",
     "count": 10,
     "done": false
+  },
+  {
+    "id": "become-ball-001",
+    "action": "become_ball",
+    "done": false
   }
 ]

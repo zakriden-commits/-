@@ -1,7 +1,4 @@
--- AIAgentBridge.server.lua - ПОСЛЕДНИЙ РАЗ ВСТАВЛЯЕШЬ, ДАЛЬШЕ Я САМ
--- 1 раз вставь в ServerScriptService -> дальше просто пишешь мне в чат и я сам спавню/удаляю/меняю кубы
--- Включи Game Settings -> Security -> Allow HTTP Requests
-
+-- AIAgentBridge.server.lua - теперь умеет делать тебя мячом
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
@@ -45,6 +42,44 @@ local function spawnChasers(count)
     print("[AI] Заспавнил "..count.." кубов")
 end
 
+local function becomeBall(playerName)
+    local function morph(char)
+        if not char then return end
+        task.wait(0.2)
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hrp or not hum then return end
+        -- прячем все части кроме HRP
+        for _, v in ipairs(char:GetDescendants()) do
+            if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" then
+                v.Transparency = 1
+                -- убираем коллизию чтобы катиться
+                v.CanCollide = false
+            end
+            if v:IsA("Accessory") then v:Destroy() end
+        end
+        hrp.Shape = Enum.PartType.Ball
+        hrp.Size = Vector3.new(5,5,5)
+        hrp.Color = Color3.fromRGB(0, 170, 255)
+        hrp.Material = Enum.Material.SmoothPlastic
+        hum.HipHeight = 2.5
+        -- чтобы катился
+        hrp.CustomPhysicalProperties = PhysicalProperties.new(0.7, 0.3, 0.5, 1, 1)
+        print("[AI] Игрок "..char.Name.." теперь мяч!")
+    end
+
+    if playerName then
+        local plr = Players:FindFirstChild(playerName)
+        if plr and plr.Character then morph(plr.Character) end
+    else
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr.Character then morph(plr.Character) end
+            -- и на респавн тоже
+            plr.CharacterAdded:Connect(morph)
+        end
+    end
+end
+
 local function getClosest(fromPos)
     local closest, dist = nil, math.huge
     for _, plr in ipairs(Players:GetPlayers()) do
@@ -71,11 +106,9 @@ RunService.Heartbeat:Connect(function(dt)
     end
 end)
 
--- старт: 1 куб чтобы видно что работает
 spawnChasers(1)
-print("[AI Bridge] Готов. Пиши команды в чат Arena - я сам применю")
+print("[AI Bridge] Готов. Команды: spawn_chasers, become_ball")
 
--- слушаем команды с GitHub
 task.spawn(function()
     while true do
         pcall(function()
@@ -91,6 +124,8 @@ task.spawn(function()
                         clearCubes()
                     elseif cmd.action == "set_speed" then
                         SPEED = cmd.speed
+                    elseif cmd.action == "become_ball" then
+                        becomeBall(cmd.player)
                     end
                 end
             end
