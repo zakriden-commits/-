@@ -19,30 +19,33 @@ jobs:
           java-version: '17'
           cache: gradle
 
-      - name: Setup Android SDK (install platforms)
+      - name: Setup Android SDK
         run: |
           echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-          ls -la $ANDROID_HOME 2>&1 | head -n 50 || true
-          ls -la $ANDROID_HOME/cmdline-tools 2>&1 | head -n 50 || true
-          ls -la /usr/local/lib/android/sdk 2>&1 | head -n 50 || true
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           if [ ! -f "$SDKMANAGER" ]; then SDKMANAGER="$ANDROID_HOME/cmdline-tools/bin/sdkmanager"; fi
           if [ ! -f "$SDKMANAGER" ]; then SDKMANAGER="sdkmanager"; fi
-          echo "Using SDKMANAGER=$SDKMANAGER"
-          $SDKMANAGER --version || echo "sdkmanager version failed"
-          yes | $SDKMANAGER --licenses || echo "licenses accept done or failed, continue"
-          $SDKMANAGER "platforms;android-34" "build-tools;34.0.0" "platform-tools" || echo "sdkmanager install attempted (may already exist)"
-          $SDKMANAGER --list_installed 2>&1 | head -n 80 || true
+          $SDKMANAGER --version || echo "sdkmanager version fail"
+          yes | $SDKMANAGER --licenses || true
+          $SDKMANAGER "platforms;android-34" "build-tools;34.0.0" "platform-tools" || true
 
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
-      - name: Gradle version check
-        run: ./gradlew --version 2>&1 | tee gradle-version.log
+      - name: Gradle version
+        run: ./gradlew --version
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace 2>&1 | tee gradle-build.log
+        run: |
+          set -o pipefail
+          ./gradlew assembleDebug --stacktrace 2>&1 | tee gradle-build.log
+          echo "=== BUILD EXIT CODE: $?" 
+          echo "=== Listing app/build ==="
+          ls -R app/build 2>&1 | head -n 500
+          echo "=== Find APK ==="
+          find app -name "*.apk" -type f 2>&1 | head -n 50
+          echo "=== Contents of app/build/outputs if exists ==="
+          ls -lh app/build/outputs/apk/debug/ 2>&1 || true
 
       - name: Upload build log
         if: always()
@@ -68,14 +71,9 @@ jobs:
           tag_name: v1.0-${{ github.run_number }}
           name: "Ragdoll Sasny v1.0 #${{ github.run_number }}"
           body: |
-            🎮 **Ragdoll Sasny** — APK готов к установке!
-            
-            **Как установить на Android (актуально на 11 ноября 2027):**
-            1. Скачай `app-debug.apk` ниже
-            2. Открой файл на телефоне
-            3. Разреши установку из неизвестных источников если попросит
-            4. Играй!
-            Карты: Центр Города, Коробочный Полигон, Деревня Sasny
+            🎮 Ragdoll Sasny — APK готов!
+            Скачай app-debug.apk ниже. Зажми любую часть куклы и кидай в город — всё разрушаемо.
+            Карты: Центр Города, Коробочный Полигон, Деревня
           files: app/build/outputs/apk/debug/*.apk
           fail_on_unmatched_files: true
         env:
