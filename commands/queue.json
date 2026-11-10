@@ -4,5 +4,11 @@
     "action": "spawn_chasers",
     "count": 2,
     "done": false
+  },
+  {
+    "id": "auto-3-cubes-001",
+    "action": "spawn_chasers",
+    "count": 3,
+    "done": false
   }
 ]
