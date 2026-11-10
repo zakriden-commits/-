@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0f0f14">
+<title>Ragdoll Sasny</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script async src="./libs/es-module-shims.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "./libs/three.module.js",
+    "three/addons/": "./libs/",
+    "cannon-es": "./libs/cannon-es.js"
+  }
+}
+</script>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="loader">
+  <div class="spinner"></div>
+  <div style="color:#fff;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;font-size:12px;opacity:0.8">Загрузка Ragdoll Sasny…</div>
+</div>
+
+<div id="ui">
+  <!-- MENU -->
+  <div id="screen-menu" class="screen active">
+    <div class="menu-preview-label">SASNY</div>
+    <div class="menu-left">
+      <div class="brand">
+        <div class="badge">● ФИЗИКА 3D • RAGDOLL • РАЗРУШЕНИЯ</div>
+        <h1>RAGDOLL<br><span>SASNY</span></h1>
+        <p>Хватай за любую часть тела — кидай в город.<br>Всё ломается, всё падает.</p>
+      </div>
+      <div class="menu-bottom">
+        <div class="hint">
+          <strong>Как играть:</strong> зажми палец на голове, руке или ноге куклы и потяни. Отпусти чтобы бросить. Разнеси все постройки!
+          <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+            <span class="pill">🖐️ Захват любой части</span>
+            <span class="pill">💥 Физика разрушений</span>
+            <span class="pill">🏙️ 3 карты</span>
+          </div>
+        </div>
+        <button id="btn-select-map" class="btn-primary">
+          <span>🃏</span> Выбрать карту <span style="opacity:0.7">→</span>
+        </button>
+        <div style="color:rgba(255,255,255,0.5);font-size:11px;font-weight:700;letter-spacing:0.08em;text-align:center">ВЕРСИЯ 1.0 • 11 НОЯБРЯ 2027 • ANDROID</div>
+      </div>
+    </div>
+    <div style="flex:1"></div>
+  </div>
+
+  <!-- MAP SELECT -->
+  <div id="screen-maps" class="screen">
+    <div class="maps-header">
+      <div>
+        <div class="badge" style="margin-bottom:8px">ВЫБЕРИ АРЕНУ</div>
+        <h2>Выбрать карту</h2>
+        <div style="color:rgba(255,255,255,0.6);font-size:13px;margin-top:4px">Каждая карта полностью разрушаема. Кидай куклу и смотри как всё рушится.</div>
+      </div>
+      <button id="btn-close-maps" class="btn-ghost">✕ Закрыть</button>
+    </div>
+    <div class="maps-grid" id="maps-grid">
+      <!-- cards injected by JS -->
+    </div>
+    <div style="display:flex;gap:12px;justify-content:flex-end;flex-wrap:wrap">
+      <button id="btn-back-menu" class="btn-secondary">← Назад</button>
+      <button id="btn-play" class="btn-primary" disabled>▶ Играть</button>
+    </div>
+  </div>
+
+  <!-- GAME HUD -->
+  <div id="screen-game" class="screen">
+    <div class="hud-top">
+      <div class="hud-left">
+        <div class="hud-title" id="hud-map-name">ЦЕНТР ГОРОДА</div>
+        <div class="hud-subtitle">ЗАЖМИ ЧАСТЬ ТЕЛА И КИДАЙ →</div>
+      </div>
+      <div class="hud-right">
+        <button class="btn-ghost" id="btn-reset">🔄 Сброс куклы</button>
+        <button class="btn-ghost" id="btn-menu">⌂ Меню</button>
+      </div>
+    </div>
+    <div class="hud-center" id="hud-center">
+      <div class="instruction">🖐️ Зажми голову, руку или ногу — потяни и отпусти чтобы бросить 💥</div>
+    </div>
+    <div class="hud-bottom">
+      <div class="destruction">
+        <label>РАЗРУШЕНИЯ</label>
+        <div class="value"><span id="destruction-pct">0</span>% <span style="font-size:11px;font-weight:700;opacity:0.6" id="destruction-count">0/0 объектов сдвинуто</span></div>
+        <div class="bar"><div class="fill" id="destruction-fill"></div></div>
+      </div>
+      <div class="hud-actions">
+        <button class="btn-secondary" id="btn-throw-hint" style="padding:12px 14px;font-size:13px">💡 Подсказка</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="game.js"></script>
+</body>
+</html>
