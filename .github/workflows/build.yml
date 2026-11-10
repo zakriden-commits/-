@@ -19,18 +19,23 @@ jobs:
           java-version: '17'
           cache: gradle
 
-      - name: Check Android SDK
+      - name: Setup Android SDK
         run: |
           echo "ANDROID_HOME=$ANDROID_HOME"
-          ls -la $ANDROID_HOME || ls -la /usr/local/lib/android/sdk || true
-          sdkmanager --version || echo "sdkmanager missing try cmdline-tools"
-          # accept licenses if needed
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          ls -la $ANDROID_HOME || true
+          # ensure cmdline-tools available
+          set -e
+          sdkmanager --version || (echo "sdkmanager not found, trying cmdline-tools path" && ls -R $ANDROID_HOME)
+          yes | sdkmanager --licenses || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools" || true
+          sdkmanager --list | head -n 50 || true
 
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace --info
+        run: ./gradlew assembleDebug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
