@@ -12,6 +12,32 @@
 
   let timer = null;
   let deadline = 0;
+  // After skipping, the site's line may still contain a masked avatar. Wait
+  // for its official winner marker and copy that user's avatar from the page.
+  const watchedGames = new Set();
+  function restoreWinners() {
+    for (const game of watchedGames) {
+      if (!game.isConnected) { watchedGames.delete(game); continue; }
+      const winnerImage = game.querySelector('.line img.winner');
+      const winnerLink = game.querySelector('.sliding .winner[href*="/user/"]');
+      if (!winnerImage || !winnerLink) continue;
+      const match = winnerLink.getAttribute('href')?.match(/\/user\/(\d+)(?:[/?#]|$)/);
+      if (!match) continue;
+      const id = match[1];
+      // A matching non-roulette image is best, including its cache-busting
+      // suffix. Fall back to the site's usual avatar URL for this user.
+      const images = [...document.querySelectorAll('img')];
+      const avatar = images.find(img => img !== winnerImage &&
+        !img.closest('.line') &&
+        (img.getAttribute('src') || '').includes('/storage/ava_' + id + '.'));
+      const source = avatar?.getAttribute('src') || '/storage/ava_' + id + '.jpg';
+      if (winnerImage.getAttribute('src') !== source) {
+        winnerImage.removeAttribute('pixelated');
+        winnerImage.setAttribute('src', source);
+      }
+    }
+  }
+  setInterval(restoreWinners, 250);
   function endSpin() {
     let changed = false;
     for (const line of document.querySelectorAll('.jackpot [id^="game_"] .line')) {
@@ -24,6 +50,8 @@
       try { jquery = window.parcelRequirea96a?.('dlAzT')?.default; } catch (_) {}
       const jqueryActive = typeof jquery === 'function' && jquery(line).is(':animated');
       if (!cssTarget && !jqueryActive) continue;
+      const game = line.closest('[id^="game_"]');
+      if (game) watchedGames.add(game);
       if (jqueryActive) jquery(line).stop(true, true);
       if (cssTarget) {
         line.style.setProperty('transition', 'none', 'important');
@@ -33,6 +61,7 @@
           try { animation.finish(); } catch (_) { /* already finished */ }
         }
       }
+      restoreWinners();
       changed = true;
     }
     if (changed) {
