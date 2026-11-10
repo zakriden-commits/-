@@ -1,9 +1,19 @@
 [
   {
-    "id": "example-001",
+    "id": "red-chaser-001",
     "action": "create_script",
-    "path": "src/Workspace/Hello.server.lua",
-    "content": "print(\"Привет от Arena AI! Этот скрипт создал я через GitHub мост\")\nprint(\"Дай команду в чате и я перезапишу этот файл\")",
+    "path": "src/ServerScriptService/RedChaser.server.lua",
+    "content": "-- автосоздано AI, см src/ServerScriptService/RedChaser.server.lua",
+    "done": false
+  },
+  {
+    "id": "chase-cube-runtime",
+    "action": "create_part",
+    "name": "RedChaser",
+    "size": [4, 4, 4],
+    "position": [0, 5, 0],
+    "color": "Bright red",
+    "material": "SmoothPlastic",
     "done": false
   }
 ]
