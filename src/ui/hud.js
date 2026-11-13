@@ -7,6 +7,8 @@ export class HUD {
     this.task = this.$('task');
     this.inv = this.$('inv');
     this.noise = this.$('noise');
+    this.staminaFill = this.$('staminaFill');
+    this.staminaValue = this.$('staminaValue');
     this.prompt = this.$('prompt');
     this.promptText = this.$('promptText');
     this.promptKey = this.prompt.querySelector('.key');
@@ -35,7 +37,15 @@ export class HUD {
   }
   setMoney(v) { this.money.textContent = `${Math.round(v)}`; }
   setTask(html) { if (this.task.innerHTML !== html) this.task.innerHTML = html; }
-  setInventory(count, total = 3) { this.inv.textContent = `рюкзак: ${count}/${total}`; }
+  setInventory(count, total = 10) { this.inv.textContent = `рюкзак: ${count}/${total}`; }
+  setStamina(ratio) {
+    const value = Math.round(Math.max(0, Math.min(1, ratio)) * 100);
+    this.staminaFill.style.width = `${value}%`;
+    this.staminaFill.style.background = value < 22
+      ? 'linear-gradient(90deg,#ff4d5e,#ff9b70)'
+      : 'linear-gradient(90deg,#4fe6d4,#b6ff5c)';
+    this.staminaValue.textContent = `${value}%`;
+  }
   setNoise(level) {
     const label = level < 0.2 ? 'тихо' : level < 0.45 ? 'слышно' : level < 0.75 ? 'громко' : 'очень громко';
     const txt = `шум: ${label}`;

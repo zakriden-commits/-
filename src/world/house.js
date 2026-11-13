@@ -110,17 +110,7 @@ export function buildHouse(scene, assets, colliders, lights, opts) {
   const wardrobe = makeWardrobe(assets);
   wardrobe.position.set(2.6, 0, -7.2);
   group.add(wardrobe);
-  colliders.addBox(2.6, -7.2, 1.05, 0.6, 'furniture');
-  // open wardrobe door with clothes inside
-  const clothes = new THREE.Group();
-  const shirtCols = [0x8b3f3f, 0x3f5d8b, 0x6b6b4a, 0x8b7a3f, 0x4a4a55];
-  for (let i = 0; i < 7; i++) {
-    const c = new THREE.MeshStandardMaterial({ color: shirtCols[i % shirtCols.length], roughness: 0.95 });
-    const s = mesh(rbox(0.18, 0.62, 0.1, 0.04, 2), c, 2.25 + (i % 4) * 0.16, 1.25, -2.8 + Math.floor(i / 4) * 0.16);
-    s.rotation.z = randRange(R, -0.06, 0.06);
-    clothes.add(s);
-  }
-  group.add(clothes);
+  const wardrobeCollider = colliders.addBox(2.6, -7.2, 1.05, 0.6, 'furniture');
 
   // rug
   const rug = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.7),
@@ -143,6 +133,22 @@ export function buildHouse(scene, assets, colliders, lights, opts) {
     group.add(b);
     colliders.addBox(x, z, s, s, 'furniture');
   });
+
+  // A small chest doubles as persistent home storage for tools and spare loot.
+  const storageChest = new THREE.Group();
+  storageChest.add(mesh(rbox(0.9, 0.42, 0.64, 0.055, 3), assets.mat.woodOld, 0, 0.23, 0));
+  for (const x of [-0.32, 0.32]) {
+    storageChest.add(mesh(box(0.035, 0.38, 0.66), assets.mat.woodWarm, x, 0.23, 0));
+  }
+  const chestLid = new THREE.Group();
+  chestLid.position.set(0, 0.43, -0.28);
+  chestLid.add(mesh(rbox(0.94, 0.11, 0.68, 0.035, 3), assets.mat.woodWarm, 0, 0.025, 0.28));
+  chestLid.add(mesh(box(0.08, 0.12, 0.025), assets.mat.metal, 0, -0.02, 0.59));
+  storageChest.add(chestLid);
+  storageChest.position.set(-0.8, 0, -6.3);
+  storageChest.userData.lid = chestLid;
+  group.add(storageChest);
+  const storageCollider = colliders.addBox(-0.8, -6.3, 0.98, 0.72, 'storage');
 
   // poster, damp patches
   poster(scene, assets, W.x0 + 0.02, 1.75, -6.6, Math.PI / 2, 0.5, 0.66, 15);
@@ -397,14 +403,49 @@ export function buildHouse(scene, assets, colliders, lights, opts) {
     },
   });
 
-  // front door -> go outside
+  // The chest is a physical stash; its contents can be moved between the
+  // backpack and home storage without losing their item types.
+  interactions.push({
+    id: 'storage', kind: 'storage', position: new THREE.Vector3(-0.8, 1.0, -5.45), radius: 1.55,
+    label: 'Открыть домашнее хранилище', icon: 'storage',
+    onUse: () => ({ text: 'Открылось домашнее хранилище.', event: 'openStorage' }),
+  });
+
+  const hideInteraction = {
+    id: 'hideWardrobe', kind: 'hide', position: new THREE.Vector3(2.6, 1.0, -6.05), radius: 1.65,
+    label: 'Спрятаться в шкафу', icon: 'hide',
+    onUse: (ctx) => {
+      if (ctx.hidden) {
+        if (ctx.canExitHide && !ctx.canExitHide()) return { text: 'Шаги ещё рядом. Подожди, пока преследователь уйдёт.' };
+        hideInteraction.label = 'Спрятаться в шкафу';
+        return { text: 'Ты тихо вышел из шкафа.', event: 'exitHide' };
+      }
+      if (ctx.flags.houseDoorOpen) return { text: 'Сначала закрой входную дверь — иначе тебя найдут.' };
+      hideInteraction.label = 'Выйти из шкафа';
+      return { text: 'Ты спрятался. Замри и дождись, пока шаги уйдут.', event: 'hide' };
+    },
+  };
+  interactions.push(hideInteraction);
+
+  // Open or close the front door from either side. Closing it restores the
+  // solid door collider so a pursuer cannot simply walk into the house.
   const doorInteract = {
-    id: 'frontDoor', kind: 'door', position: new THREE.Vector3(-3.4, 1.1, 1.6), radius: 1.7,
+    id: 'frontDoor', kind: 'door', position: new THREE.Vector3(-3.4, 1.1, 1.6), radius: 1.85,
     label: 'Выйти на улицу', icon: 'door',
     onUse: (ctx) => {
+      if (ctx.flags.houseDoorOpen) {
+        frontDoorPivot.rotation.y = 0;
+        doorCollider.active = true;
+        ctx.flags.houseDoorOpen = false;
+        ctx.audio.creak();
+        doorInteract.label = ctx.flags.leftHouse ? 'Открыть входную дверь' : 'Выйти на улицу';
+        return { text: 'Ты закрыл входную дверь.', event: 'closeHouseDoor' };
+      }
       frontDoorPivot.rotation.y = Math.PI * 0.62;
       doorCollider.active = false;
+      ctx.flags.houseDoorOpen = true;
       ctx.audio.creak();
+      doorInteract.label = 'Закрыть входную дверь';
       return { text: 'Дверь скрипнула. На улице холодно.', event: 'exitHouse' };
     },
   };
@@ -422,6 +463,12 @@ export function buildHouse(scene, assets, colliders, lights, opts) {
     },
   });
 
+  const setWardrobeOpen = (open) => {
+    const angle = open ? Math.PI * 0.48 : 0;
+    wardrobe.userData.doors[0].rotation.y = angle;
+    wardrobe.userData.doors[1].rotation.y = -angle;
+  };
+
   return {
     group,
     W,
@@ -433,6 +480,13 @@ export function buildHouse(scene, assets, colliders, lights, opts) {
     nightstandCollider,
     fridgeCollider,
     shelfCollider,
+    wardrobe,
+    wardrobeCollider,
+    wardrobeDoors: wardrobe.userData.doors,
+    hideInteraction,
+    setWardrobeOpen,
+    storageChest,
+    storageCollider,
     doorPivot: frontDoorPivot,
     doorCollider,
     bedroomLight: bulbLight,

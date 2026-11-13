@@ -117,17 +117,45 @@ export function makeNightstand(assets) {
 export function makeWardrobe(assets) {
   const g = new THREE.Group();
   const w = 1.0, h = 2.0, d = 0.55;
-  g.add(mesh(rbox(w, h, d, 0.02), assets.mat.woodOld, 0, h / 2, 0));
-  // doors
-  for (const s of [-1, 1]) {
-    const door = mesh(rbox(w / 2 - 0.04, h - 0.12, 0.04, 0.01), assets.mat.woodWarm, s * w / 4, h / 2, d / 2 + 0.01);
-    g.add(door);
-    const knob = mesh(sphere(0.022, 8), assets.mat.metal, s * 0.06, h / 2, d / 2 + 0.04);
-    g.add(knob);
-    // inset panel
-    g.add(mesh(box(w / 2 - 0.18, h - 0.45, 0.01), assets.mat.woodOld, s * w / 4, h / 2, d / 2 + 0.035));
+  const doors = [];
+  const darkInterior = new THREE.MeshStandardMaterial({ color: 0x171716, roughness: 1 });
+
+  // A real hollow cabinet: the doors can swing open, revealing a dark space
+  // the player can use to hide in. The old solid box left no interior visible.
+  g.add(mesh(box(0.055, h - 0.04, d), assets.mat.woodOld, -w / 2 + 0.0275, h / 2, 0));
+  g.add(mesh(box(0.055, h - 0.04, d), assets.mat.woodOld, w / 2 - 0.0275, h / 2, 0));
+  g.add(mesh(box(w - 0.08, 0.055, d), assets.mat.woodWarm, 0, 0.0275, 0));
+  g.add(mesh(box(w - 0.08, 0.055, d), assets.mat.woodWarm, 0, h - 0.0275, 0));
+  g.add(mesh(box(w - 0.1, h - 0.12, 0.035), assets.mat.woodOld, 0, h / 2, -d / 2 + 0.02));
+  g.add(mesh(box(w - 0.11, h - 0.13, 0.012), darkInterior, 0, h / 2, d / 2 - 0.035));
+  g.add(mesh(box(w - 0.18, 0.024, 0.024), assets.mat.metal, 0, h - 0.28, 0.02));
+
+  const makeDoor = (side) => {
+    const hinge = new THREE.Group();
+    hinge.position.set(side < 0 ? -w / 2 + 0.04 : w / 2 - 0.04, 0, d / 2 + 0.008);
+    const width = w / 2 - 0.04;
+    const center = side < 0 ? width / 2 : -width / 2;
+    hinge.add(mesh(rbox(width, h - 0.12, 0.045, 0.012), assets.mat.woodWarm,
+      center, h / 2, 0));
+    hinge.add(mesh(box(width - 0.15, h - 0.42, 0.012), assets.mat.woodOld,
+      center, h / 2, 0.026));
+    const knobX = side < 0 ? width - 0.06 : -width + 0.06;
+    hinge.add(mesh(sphere(0.024, 10), assets.mat.metal, knobX, h / 2, 0.05));
+    g.add(hinge);
+    doors.push(hinge);
+  };
+  makeDoor(-1);
+  makeDoor(1);
+
+  // A few clothes on the rail make the hollow space read as a lived-in closet.
+  const shirtMats = [assets.mat.fabricBlue, assets.mat.fabricRed, assets.mat.fabricGrey];
+  for (let i = 0; i < 3; i++) {
+    const shirt = mesh(rbox(0.16, 0.5, 0.08, 0.035), shirtMats[i], -0.22 + i * 0.22, 1.12, 0.02);
+    shirt.rotation.z = (i - 1) * 0.035;
+    g.add(shirt);
   }
-  g.add(mesh(box(w + 0.04, 0.06, d + 0.04), assets.mat.woodWarm, 0, h, 0));
+
+  g.userData.doors = doors;
   g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
   return g;
 }

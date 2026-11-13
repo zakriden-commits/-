@@ -26,7 +26,8 @@ export class Mission {
       return `Собери деньги в доме · <b>${Math.round(g.player.money)} ₴</b>`;
     }
     if (m.stage === 'street') return 'Дойди до магазина <b>24 ЧАСА</b> через дорогу';
-    if (m.stage === 'shop') return `Тихо возьми <b>${m.products}/${m.productsNeeded}</b> товара`;
+    if (m.stage === 'shop') return `Тихо возьми <b>${m.products}/${m.productsNeeded}</b> товара
+      <small>Где искать: хлеб — слева у входа; консервы — слева в середине; чай — слева сзади; молоко — справа в середине; печенье — справа сзади.</small>`;
     if (m.stage === 'leaving') return 'Товар собран — выйди из магазина';
     if (m.stage === 'returnHome') return 'Вернись домой и закрой дверь';
     if (m.stage === 'done') return 'Готово. Отдыхай до следующей ночи.';
@@ -45,12 +46,20 @@ export class Mission {
       audio: g.audio,
       flags: g.flags,
       inventory: g.player.inventory,
+      hidden: g.player.hidden,
+      time: g.time,
+      canExitHide: () => g.canExitHide ? g.canExitHide() : true,
+      canAddItem: () => g.player.canAddItem ? g.player.canAddItem() : true,
+      hasItem: (name) => g.player.hasItem ? g.player.hasItem(name) : g.player.inventory.some((item) => item.name === name),
       addMoney: (v) => { g.player.addMoney(v); g.hud.setMoney(g.player.money); return v; },
-      addItem: (name, value) => {
-        g.player.addItem(name, value);
-        this.products++;
-        g.hud.setInventory(g.player.inventory.length, this.productsNeeded);
+      addItem: (name, value = 0, type = 'loot') => {
+        const before = g.player.inventory.length;
+        const added = g.player.addItem(name, value, type);
+        if (added === false || (added === undefined && g.player.inventory.length === before)) return false;
+        if (type === 'product') this.products++;
+        g.hud.setInventory(g.player.inventory.length, g.player.inventoryCapacity);
         this.updateObjective();
+        return true;
       },
     };
   }
@@ -82,6 +91,9 @@ export class Mission {
         g.hud.say('Холодный воздух. Магазин через дорогу, свет горит.', 3.6);
       }
     }
+    if (res.event === 'openStorage') g.openStorage?.();
+    if (res.event === 'hide') g.enterHide?.();
+    if (res.event === 'exitHide') g.exitHide?.();
     if (res.text && it.kind === 'safe') g.audio.coins();
     return res;
   }
@@ -116,7 +128,7 @@ export class Mission {
       this.enteredShop = true;
       this.updateObjective();
       g.hud.toast('МАГАЗИН', 'Тихо. Охранник ходит по залу.', 2.0);
-      g.hud.say('Дверь пискнула. Охранник у первого ряда.', 3.0);
+      g.hud.say('Ищи упаковки на полках: хлеб — слева у входа, консервы — слева посередине, чай — слева сзади; молоко и печенье — на правых полках.', 5.2);
     }
 
     if (this.stage === 'shop' && p.z < 13.4 && this.enteredShop) {
@@ -141,8 +153,21 @@ export class Mission {
       g.hud.say('Почти дома. Не оборачивайся.', 2.6);
     }
 
-    // home safe
+    // The home is safe only after the entry door is shut and the player is
+    // no longer hiding or being searched for. This makes the close-and-hide
+    // actions useful during the return leg instead of ending the night early.
     if (this.stage === 'returnHome' && p.z < 2 && p.z > -8) {
+      if (g.flags.houseDoorOpen) {
+        g.hud.setTask('Закрой входную дверь — она ещё открыта');
+        return null;
+      }
+      const pursuersSearching = g.guards?.some((guard) => guard.state === 'chase' || guard.state === 'search');
+      if (g.player.hidden || pursuersSearching) {
+        g.hud.setTask(g.player.hidden
+          ? 'Ты спрятался дома — дождись, пока шаги стихнут'
+          : 'Погоня не отстала: закрой дверь и спрячься в шкафу');
+        return null;
+      }
       this.stage = 'done';
       this.updateObjective();
       return 'win';

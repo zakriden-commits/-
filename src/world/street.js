@@ -20,21 +20,22 @@ export function buildStreet(scene, assets, colliders, lights, opts = {}) {
   group.name = 'street';
   scene.add(group);
 
-  const ROAD = { z0: 4, z1: 12, x0: -30, x1: 30 };
+  const ROAD = { z0: 4, z1: 12, x0: -40, x1: 40 };
 
-  // ground: grass behind the buildings, sidewalks, asphalt
-  floorPatch(scene, assets, assets.mat.grass, -40, 40, -60, 60, -0.02, 0.5);
-  floorPatch(scene, assets, assets.mat.sidewalk, -30, 30, 2.0, 4, 0.001, 0.5);
+  // A wider run of road and sidewalks makes the shop feel like one block in
+  // a town, rather than a small set built only for the shortest route.
+  floorPatch(scene, assets, assets.mat.grass, -52, 52, -60, 60, -0.02, 0.5);
+  floorPatch(scene, assets, assets.mat.sidewalk, ROAD.x0, ROAD.x1, 2.0, 4, 0.001, 0.5);
   floorPatch(scene, assets, assets.mat.asphalt, ROAD.x0, ROAD.x1, ROAD.z0, ROAD.z1, 0.0, 0.25);
-  floorPatch(scene, assets, assets.mat.sidewalk, -30, 30, 12, 14.2, 0.001, 0.5);
+  floorPatch(scene, assets, assets.mat.sidewalk, ROAD.x0, ROAD.x1, 12, 14.2, 0.001, 0.5);
 
   // curbs
   for (const z of [4, 12]) {
-    const curb = mesh(box(60, 0.16, 0.18), assets.mat.concrete, 0, 0.08, z);
+    const curb = mesh(box(80, 0.16, 0.18), assets.mat.concrete, 0, 0.08, z);
     group.add(curb);
   }
   // road markings
-  for (let x = -28; x < 28; x += 4) {
+  for (let x = -38; x < 38; x += 4) {
     const dash = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 0.14),
       new THREE.MeshBasicMaterial({ color: 0xcfc6a8, transparent: true, opacity: 0.35 }));
     dash.rotation.x = -Math.PI / 2;
@@ -59,10 +60,10 @@ export function buildStreet(scene, assets, colliders, lights, opts = {}) {
   /* ----------------------- facades across ---------------------- */
   // opposite side of the street (south of the house) — closed shop fronts
   const southFacade = new THREE.Group();
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < 11; i++) {
     const w = randRange(R, 4, 6.5);
     const h = randRange(R, 6, 11);
-    const x = -26 + i * 7.4;
+    const x = -36 + i * 7.2;
     const b = mesh(box(w, h, 0.4), i % 2 ? assets.mat.brick : assets.mat.concrete, x, h / 2, -1.6 - 0.35);
     southFacade.add(b);
     for (let f = 0; f < Math.floor(h / 3); f++) {
@@ -97,6 +98,46 @@ export function buildStreet(scene, assets, colliders, lights, opts = {}) {
   houseFacade(-10.5, 7, assets.mat.brick);
   houseFacade(10.5, 8, assets.mat.concrete);
   houseFacade(-18, 6, assets.mat.plaster);
+  houseFacade(21.5, 7, assets.mat.brick);
+  houseFacade(-28, 7, assets.mat.concrete);
+
+  /* ----------------------- town furniture ----------------------- */
+  // A lit bus shelter and benches continue the sidewalk beyond the shop.
+  const shelter = new THREE.Group();
+  shelter.add(mesh(box(3.8, 0.12, 1.15), assets.mat.metalDark, 0, 2.25, 0));
+  for (const sx of [-1, 1]) shelter.add(mesh(box(0.1, 2.15, 0.1), assets.mat.metal, sx * 1.8, 1.08, -0.48));
+  const shelterGlass = new THREE.Mesh(new THREE.PlaneGeometry(3.5, 1.7), new THREE.MeshPhysicalMaterial({
+    color: 0xb6d0dd, roughness: 0.15, transparent: true, opacity: 0.22, side: THREE.DoubleSide,
+  }));
+  shelterGlass.position.set(0, 1.15, 0.48);
+  shelter.add(shelterGlass);
+  shelter.add(mesh(rbox(2.5, 0.12, 0.42, 0.04), assets.mat.woodWarm, 0, 0.55, -0.12));
+  shelter.add(mesh(box(0.4, 0.55, 0.045), assets.mat.neonGreen, 1.45, 1.18, -0.53));
+  shelter.position.set(28, 0, 13.25);
+  group.add(shelter);
+  colliders.addBox(26.2, 12.8, 0.18, 0.18, 'busStop');
+  colliders.addBox(29.8, 12.8, 0.18, 0.18, 'busStop');
+
+  // Trees, a low fence and a small seating nook make the street landmarks
+  // readable from the house and from the shop entrance.
+  for (const [x, z] of [[-34, 3.0], [-27, 13.2], [34, 3.0], [36, 13.2]]) {
+    group.add(mesh(cyl(0.16, 0.21, 1.9, 8), assets.mat.woodOld, x, 0.95, z));
+    const crown = new THREE.Mesh(new THREE.IcosahedronGeometry(1.0, 1), new THREE.MeshStandardMaterial({
+      color: x < 0 ? 0x315b42 : 0x3d6544, roughness: 0.94,
+    }));
+    crown.position.set(x, 2.35, z);
+    crown.scale.set(1.15, 1.35, 1.08);
+    crown.castShadow = true;
+    group.add(crown);
+    colliders.addBox(x, z, 0.45, 0.45, 'tree');
+  }
+  const bench = new THREE.Group();
+  bench.add(mesh(rbox(1.5, 0.12, 0.42, 0.04), assets.mat.woodWarm, 0, 0.52, 0));
+  bench.add(mesh(rbox(1.5, 0.48, 0.08, 0.035), assets.mat.woodOld, 0, 0.82, -0.18));
+  for (const x of [-0.58, 0.58]) bench.add(mesh(box(0.06, 0.5, 0.32), assets.mat.metalDark, x, 0.25, 0));
+  bench.position.set(-24, 0, 13.05);
+  group.add(bench);
+  colliders.addBox(-24, 13.05, 1.45, 0.52, 'bench');
 
   /* -------------------------- street lamps ---------------------- */
   const lampPositions = [[-12, 4.6], [0, 4.6], [12, 4.6], [-6, 11.4], [6, 11.4], [18, 11.4], [-20, 11.4]];
@@ -165,9 +206,32 @@ export function buildStreet(scene, assets, colliders, lights, opts = {}) {
   group.add(van);
   colliders.addBox(-4.5, 12.6, 2.2, 4.8, 'van');
 
+  // The police cruiser waits off-block and drives in only during an arrival event.
+  const policeCar = makeCar(assets, 0x142c48);
+  const policeStripe = new THREE.MeshStandardMaterial({ color: 0xe8edf0, roughness: 0.42, metalness: 0.18 });
+  for (const side of [-1, 1]) policeCar.add(mesh(box(0.025, 0.17, 3.15), policeStripe, side * 0.88, 0.72, -0.05));
+  const bar = new THREE.Group();
+  const redLight = mesh(rbox(0.28, 0.12, 0.19, 0.025), new THREE.MeshStandardMaterial({
+    color: 0xff263b, emissive: 0x8b0011, emissiveIntensity: 1.2,
+  }), -0.18, 0, 0);
+  const blueLight = mesh(rbox(0.28, 0.12, 0.19, 0.025), new THREE.MeshStandardMaterial({
+    color: 0x258bff, emissive: 0x073a8e, emissiveIntensity: 1.2,
+  }), 0.18, 0, 0);
+  bar.add(redLight, blueLight);
+  bar.position.set(0, 1.36, -0.15);
+  policeCar.add(bar);
+  policeCar.position.set(40, 0, 8.3);
+  policeCar.rotation.y = -Math.PI / 2;
+  policeCar.visible = false;
+  policeCar.userData.redLight = redLight;
+  policeCar.userData.blueLight = blueLight;
+  group.add(policeCar);
+  const policeCollider = colliders.addBox(40, 8.3, 4.5, 2.2, 'policeCar');
+  policeCollider.active = false;
+
   // graffiti-ish decals on the north facade
   grungeDecal(scene, 5.5, 1.6, 1.98, 0, 2.0, 1.4, 33);
   grungeDecal(scene, -8.4, 1.4, 1.98, 0, 1.6, 1.2, 44);
 
-  return { group, ROAD, lampPositions, facadeZ: 14 };
+  return { group, ROAD, lampPositions, facadeZ: 14, policeCar, policeCollider };
 }

@@ -295,30 +295,146 @@ export function buildShop(scene, assets, colliders, lights, opts = {}) {
   /* ------------------------- interactions --------------------- */
   const interactions = [];
 
-  // products (3 required)
+  // Required products are deliberately placed as separate, easy-to-spot
+  // packages on real shelf surfaces. The interaction point stays in the aisle
+  // so the shelf collider never forces the player to clip through the rack.
   const productSpots = [
-    { x: -4.0, z: 18.2, name: 'хлеб', seed: 3 },
-    { x: 4.0, z: 20.8, name: 'молоко', seed: 5 },
-    { x: -4.2, z: 23.4, name: 'чай', seed: 8 },
-    { x: 4.2, z: 25.8, name: 'печенье', seed: 2 },
-    { x: -4.4, z: 20.8, name: 'консервы', seed: 6 },
+    { shelfIndex: 0, level: 1, localX: -0.12, approachX: -3.5, z: 18.2, name: 'хлеб', seed: 3 },
+    { shelfIndex: 3, level: 1, localX: 0.12, approachX: 3.5, z: 20.8, name: 'молоко', seed: 5 },
+    { shelfIndex: 4, level: 2, localX: -0.16, approachX: -3.5, z: 23.4, name: 'чай', seed: 8 },
+    { shelfIndex: 7, level: 2, localX: 0.16, approachX: 3.5, z: 25.8, name: 'печенье', seed: 2 },
+    { shelfIndex: 2, level: 0, localX: 0.18, approachX: -3.5, z: 20.8, name: 'консервы', seed: 6 },
   ];
   productSpots.forEach((p, i) => {
-    const itemGeo = mesh(rbox(0.16, 0.24, 0.16, 0.02), assets.productMaterial('box', p.seed), 0, 0, 0);
-    itemGeo.position.set(p.x, 1.1, p.z);
-    group.add(itemGeo);
+    const shelf = shelves[p.shelfIndex];
+    const unit = shelf.unit;
+    const itemHeight = p.name === 'хлеб' ? 0.26 : 0.3;
+    const itemDepth = 0.18;
+    const shelfY = 0.12 + p.level * ((2.0 - 0.2) / 4);
+    const approachX = shelf.x < 0 ? -3.5 : 3.5;
+    const itemGeo = mesh(
+      rbox(0.24, itemHeight, itemDepth, 0.028, 3),
+      assets.productMaterial('box', p.seed),
+      p.localX, shelfY + 0.02 + itemHeight / 2, 0.5 - itemDepth / 2 - 0.035,
+    );
+    itemGeo.rotation.y = (p.seed % 3 - 1) * 0.045;
+    itemGeo.userData.productName = p.name;
+    unit.add(itemGeo);
+    const marker = new THREE.Mesh(new THREE.RingGeometry(0.14, 0.2, 24), new THREE.MeshBasicMaterial({
+      color: 0xffd166, transparent: true, opacity: 0.86, side: THREE.DoubleSide, depthWrite: false,
+    }));
+    marker.userData.productMarkerFor = p.name;
+    marker.rotation.x = -Math.PI / 2;
+    marker.position.set(approachX, 0.026, p.z);
+    group.add(marker);
+
+    const tagCanvas = document.createElement('canvas');
+    tagCanvas.width = 256; tagCanvas.height = 80;
+    const tagCtx = tagCanvas.getContext('2d');
+    tagCtx.fillStyle = '#101a21'; tagCtx.fillRect(0, 0, 256, 80);
+    tagCtx.strokeStyle = '#ffd166'; tagCtx.lineWidth = 7; tagCtx.strokeRect(4, 4, 248, 72);
+    tagCtx.fillStyle = '#fff0c4'; tagCtx.font = 'bold 32px Helvetica, Arial, sans-serif';
+    tagCtx.textAlign = 'center'; tagCtx.textBaseline = 'middle'; tagCtx.fillText(p.name.toUpperCase(), 128, 41, 238);
+    const tagTexture = new THREE.CanvasTexture(tagCanvas);
+    tagTexture.colorSpace = THREE.SRGBColorSpace;
+    const tag = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.16), new THREE.MeshBasicMaterial({
+      map: tagTexture, side: THREE.DoubleSide, toneMapped: false,
+    }));
+    tag.position.set(p.localX, shelfY + 0.105, 0.505);
+    unit.add(tag);
+
     interactions.push({
-      id: `product${i}`, kind: 'loot', position: new THREE.Vector3(p.x, 1.0, p.z), radius: 1.5,
+      id: `product${i}`, kind: 'loot', position: new THREE.Vector3(approachX, 1.0, p.z), radius: 1.35,
       label: `Взять ${p.name}`, icon: 'loot', product: p.name, value: 35,
       onUse: (ctx) => {
         if (ctx.flags[`p${i}`]) return { text: 'Здесь уже пусто.' };
+        if (ctx.canAddItem && !ctx.canAddItem()) return { text: 'Рюкзак полон. Оставь часть вещей дома.' };
         ctx.flags[`p${i}`] = true;
         ctx.audio.pickup();
         itemGeo.visible = false;
-        ctx.addItem(p.name, 35);
-        return { text: `${p.name[0].toUpperCase()}${p.name.slice(1)} — в рюкзак. (${ctx.inventory.length}/3)`, pickup: true };
+        marker.visible = false;
+        tag.visible = false;
+        ctx.addItem(p.name, 35, 'product');
+        return { text: `${p.name[0].toUpperCase()}${p.name.slice(1)} — в рюкзак. (${ctx.inventory.length}/10)`, pickup: true };
       },
     });
+  });
+
+  /* ----------------------- tools / hacking ---------------------- */
+  // A small workbench in the stockroom makes the tool hunt legible. The
+  // hacking tablet is used at the camera console; lockpicks are optional loot.
+  const workbench = new THREE.Group();
+  workbench.add(mesh(rbox(1.05, 0.12, 0.62, 0.025, 2), assets.mat.woodOld, 0, 0.72, 0));
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    workbench.add(mesh(box(0.06, 0.72, 0.06), assets.mat.metalDark, sx * 0.43, 0.36, sz * 0.24));
+  }
+  workbench.position.set(1.8, 0, 28.2);
+  group.add(workbench);
+  colliders.addBox(1.8, 28.2, 0.72, 0.42, 'workbench');
+
+  const tablet = new THREE.Group();
+  tablet.add(mesh(rbox(0.3, 0.045, 0.22, 0.025, 3), assets.mat.metalDark, 0, 0, 0));
+  tablet.add(mesh(box(0.22, 0.012, 0.14), assets.mat.neonGreen, 0, 0.027, 0.01));
+  tablet.add(mesh(box(0.045, 0.014, 0.045), assets.mat.emissiveWarm, 0.105, 0.028, -0.07));
+  tablet.position.set(1.75, 0.81, 28.18);
+  group.add(tablet);
+
+  const lockpickCase = new THREE.Group();
+  lockpickCase.add(mesh(rbox(0.24, 0.045, 0.13, 0.018, 2), assets.mat.leather, 0, 0.025, 0));
+  for (let i = 0; i < 3; i++) {
+    const pick = mesh(box(0.014, 0.008, 0.1), assets.mat.chrome, -0.06 + i * 0.06, 0.052, 0);
+    pick.rotation.y = (i - 1) * 0.08;
+    lockpickCase.add(pick);
+  }
+  lockpickCase.position.set(-1.2, 0, 28.05);
+  group.add(lockpickCase);
+
+  const console = new THREE.Group();
+  console.add(mesh(rbox(0.42, 0.48, 0.1, 0.025, 2), assets.mat.metalDark, 0, 0, 0));
+  console.add(mesh(box(0.27, 0.18, 0.016), assets.mat.glassDark, 0, 0.08, 0.06));
+  const consoleLed = mesh(sphere(0.028, 10), assets.mat.neonGreen.clone(), 0.14, -0.14, 0.06);
+  console.add(consoleLed);
+  console.position.set(-7.82, 1.65, 17.4);
+  console.rotation.y = Math.PI / 2;
+  group.add(console);
+
+  interactions.push({
+    id: 'hackTablet', kind: 'loot', position: new THREE.Vector3(1.75, 1.0, 27.45), radius: 1.35,
+    label: 'Взять хак-планшет', icon: 'tool',
+    onUse: (ctx) => {
+      if (ctx.flags.hackTablet) return { text: 'Планшет уже у тебя.' };
+      if (ctx.canAddItem && !ctx.canAddItem()) return { text: 'Рюкзак полон. Освободи место в домашнем хранилище.' };
+      ctx.flags.hackTablet = true;
+      tablet.visible = false;
+      ctx.addItem('Хак-планшет', 0, 'tool');
+      ctx.audio.pickup();
+      return { text: 'Хак-планшет в рюкзаке. Подключи его к консоли у левой стены.', pickup: true };
+    },
+  });
+  interactions.push({
+    id: 'lockpicks', kind: 'loot', position: new THREE.Vector3(-1.2, 0.8, 27.35), radius: 1.35,
+    label: 'Взять отмычки', icon: 'tool',
+    onUse: (ctx) => {
+      if (ctx.flags.lockpicks) return { text: 'Отмычки уже у тебя.' };
+      if (ctx.canAddItem && !ctx.canAddItem()) return { text: 'Рюкзак полон. Освободи место в домашнем хранилище.' };
+      ctx.flags.lockpicks = true;
+      lockpickCase.visible = false;
+      ctx.addItem('Отмычки', 0, 'tool');
+      ctx.audio.pickup();
+      return { text: 'Ты нашёл набор тонких отмычек.', pickup: true };
+    },
+  });
+  interactions.push({
+    id: 'cameraConsole', kind: 'hack', position: new THREE.Vector3(-6.75, 1.55, 17.4), radius: 1.45,
+    label: 'Взломать камеры (45 сек)', icon: 'hack',
+    onUse: (ctx) => {
+      if (!ctx.hasItem('Хак-планшет')) return { text: 'Нужен хак-планшет из подсобки.' };
+      if (ctx.time < (ctx.flags.camerasDisabledUntil ?? 0)) return { text: 'Камеры уже отключены.' };
+      ctx.flags.camerasDisabledUntil = ctx.time + 45;
+      consoleLed.material.color.setHex(0x39ff9a);
+      ctx.audio.tone({ freq: 740, dur: 0.12, type: 'triangle', gain: 0.08 });
+      return { text: 'Камеры отключены на 45 секунд. Действуй быстро.' };
+    },
   });
 
   // checkout A drawer (cashier present during the day)
@@ -370,14 +486,16 @@ export function buildShop(scene, assets, colliders, lights, opts = {}) {
     label: 'Открыть сейф', icon: 'safe', money: 900, risky: true,
     onUse: (ctx) => {
       if (ctx.flags.safe) return { text: 'Сейф пуст.' };
-      if (!ctx.flags.note) return { text: 'Кодовый замок. Нужно узнать код из подсобки.' };
+      const hasTools = ctx.hasItem('Отмычки') || ctx.hasItem('Хак-планшет');
+      if (!ctx.flags.note && !hasTools) return { text: 'Кодовый замок закрыт: найди записку с кодом или инструменты в подсобке.' };
       ctx.flags.safe = true;
       safeDoor.rotation.y = -1.6;
       safeCollider.maxX += 0.6;
       ctx.audio.coins();
       ctx.audio.success();
       ctx.addMoney(900);
-      return { text: 'Сейф открыт. Внутри 900 ₴ выручки.', money: 900, _credited: true, noise: 0.7 };
+      const openedBy = ctx.flags.note ? 'Код подошёл.' : 'Ты обошёл замок инструментом.';
+      return { text: `${openedBy} Внутри 900 ₴ выручки.`, money: 900, _credited: true, noise: 0.7 };
     },
   });
   // the note with the code
@@ -404,6 +522,7 @@ export function buildShop(scene, assets, colliders, lights, opts = {}) {
 
   return {
     group, H, interactions, cameras, shelves, resetDoors, openDoors, doorCollider, backDoorCollider,
+    cameraConsoleLed: consoleLed,
     cashierSpot: new THREE.Vector3(-6.2, 0, 17.6),
     guardSpawn: new THREE.Vector3(0, 0, 22.5),
     entrance: new THREE.Vector3(3.0, 0, 13.4),

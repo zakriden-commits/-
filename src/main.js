@@ -8,8 +8,9 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { Assets } from './core/assets.js';
 import { AudioSystem } from './core/audio.js';
 import { Input } from './core/input.js';
-import { clamp, damp, lerp, noise1 } from './core/util.js';
+import { clamp, damp, lerp, makeRng, randRange } from './core/util.js';
 import { CollisionWorld } from './systems/collision.js';
+import { DIFFICULTIES, getDifficulty } from './systems/difficulty.js';
 import { Player } from './systems/player.js';
 import { Guard, NPC, NPC_STATE } from './systems/ai.js';
 import { Mission } from './systems/mission.js';
@@ -65,6 +66,20 @@ class Game {
     // A balanced, sharper profile is the default; Fast remains available in Pause.
     this.quality = 'high';
     this.muted = false;
+    this.difficultyId = 'medium';
+    this.difficulty = getDifficulty(this.difficultyId);
+    this.rng = makeRng(20261113);
+    this.hiding = false;
+    this.hideRemaining = 0;
+    this.hideDoorTimer = 0;
+    this.storageOpen = false;
+    this.storageReturnState = 'playing';
+    this.policeActive = false;
+    this.policeState = 'idle';
+    this.policeEventTimer = 0;
+    this.policeNextAt = 0;
+    this.cameraSuspicion = 0;
+    this.residentChatTimer = 14;
 
     this.pressBuffer = 0;
     this.noiseLevel = 0;
@@ -94,6 +109,7 @@ class Game {
     await new Promise((r) => setTimeout(r, 220));
     document.getElementById('loading').classList.add('done');
     this._bindUI();
+    this.setDifficulty(this.difficultyId);
     this._resize();
     window.addEventListener('resize', () => this._resize());
     window.addEventListener('orientationchange', () => setTimeout(() => this._resize(), 240));
@@ -155,6 +171,8 @@ class Game {
     const A = this.assets;
     this.npcs = [];
     this.guards = [];
+    this.residents = [];
+    this.police = [];
 
     // cashier behind checkout A
     this.cashier = new NPC(A, {
@@ -209,6 +227,62 @@ class Game {
     });
     this.scene.add(this.walker.object);
     this.npcs.push(this.walker);
+    this.residents.push(this.walker, this.shopper);
+
+    // A few neighbours use the widened sidewalks. Each has a distinct skin,
+    // hairstyle, clothing palette and gait seed so the town does not repeat one
+    // mannequin along a loop.
+    const residentDefs = [
+      {
+        name: 'resident-1', seed: 113, speed: 0.82,
+        look: { skin: 0x8a5a3d, shirt: 0x5a8055, pants: 0x283342, hair: 0x17110e, hairStyle: 'short', height: 0.98, scarf: 0x7d4a39 },
+        route: [[-22, 3.35], [22, 3.35]],
+      },
+      {
+        name: 'resident-2', seed: 127, speed: 0.9,
+        look: { skin: 0xd6a77d, shirt: 0x704c74, pants: 0x34333a, hair: 0x3a251d, hairStyle: 'long', height: 1.02, scarf: 0xb15c52 },
+        route: [[22, 13.55], [-22, 13.55]],
+      },
+      {
+        name: 'resident-3', seed: 139, speed: 0.72,
+        look: { skin: 0xa87352, shirt: 0x355c7d, pants: 0x2b3038, hair: 0x1b1310, hairStyle: 'curly', beard: true, height: 1.06 },
+        route: [[-19, 13.55], [19, 13.55]],
+      },
+      {
+        name: 'resident-4', seed: 151, speed: 1.05,
+        look: { skin: 0xf0c9a0, shirt: 0x8b573c, pants: 0x263342, hair: 0x6b4930, hairStyle: 'bun', height: 0.95 },
+        route: [[18, 3.35], [-18, 3.35]],
+      },
+    ];
+    for (const def of residentDefs) {
+      const resident = new NPC(A, def);
+      this.scene.add(resident.object);
+      this.npcs.push(resident);
+      this.residents.push(resident);
+    }
+
+    // Police officers are dormant until the scheduled cruiser arrival.
+    const policeDefs = [
+      {
+        name: 'police-1', seed: 171, speed: 1.0, sightRange: 10, fov: 0.95, hearRange: 6,
+        look: { skin: 0xc99169, shirt: 0x152b49, pants: 0x172236, hair: 0x15100c, cap: 0x17365b, height: 1.06 },
+        route: [[-12, 8.3], [-10, 12.7], [-6, 13.45], [-12, 13.45]],
+      },
+      {
+        name: 'police-2', seed: 181, speed: 0.94, sightRange: 10, fov: 0.95, hearRange: 6,
+        look: { skin: 0x81563e, shirt: 0x192f4b, pants: 0x1b2533, hair: 0x100d0b, cap: 0x17365b, height: 1.02 },
+        route: [[-12.8, 8.5], [-14, 12.8], [-19, 13.45], [-14, 13.45]],
+      },
+    ];
+    for (const def of policeDefs) {
+      const officer = new Guard(A, def);
+      officer.police = true;
+      officer.object.visible = false;
+      this.scene.add(officer.object);
+      this.npcs.push(officer);
+      this.guards.push(officer);
+      this.police.push(officer);
+    }
   }
 
   _buildLighting() {
@@ -334,6 +408,10 @@ class Game {
     screenEl('btnPause').addEventListener('click', () => { if (this.state === 'playing') this.pause(); });
     screenEl('btnRestart').addEventListener('click', () => location.reload());
     screenEl('btnAgain').addEventListener('click', () => location.reload());
+    document.querySelectorAll('[data-difficulty]').forEach((button) => {
+      button.addEventListener('click', () => this.setDifficulty(button.dataset.difficulty));
+    });
+    screenEl('btnStorageClose').addEventListener('click', () => this.closeStorage());
     screenEl('btnSound').addEventListener('click', (e) => {
       this.muted = !this.muted;
       this.audio.setMuted(this.muted);
@@ -369,6 +447,117 @@ class Game {
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
       navigator.serviceWorker.register('sw.js').catch(() => {});
     }
+  }
+
+  openStorage() {
+    if (this.state !== 'playing' || this.storageOpen) return;
+    this.storageOpen = true;
+    this.storageReturnState = this.state;
+    this.state = 'storage';
+    this.input.enabled = false;
+    this.hud.show(false);
+    this.showScreen('screenStorage');
+    if (this.house.storageChest?.userData.lid) this.house.storageChest.userData.lid.rotation.x = -1.05;
+    this.renderStorage();
+  }
+
+  closeStorage() {
+    if (!this.storageOpen) return;
+    this.storageOpen = false;
+    this.state = this.storageReturnState || 'playing';
+    this.input.enabled = true;
+    this.pressBuffer = 0;
+    if (this.house.storageChest?.userData.lid) this.house.storageChest.userData.lid.rotation.x = 0;
+    this.showScreen(null, false);
+    this.hud.show(true);
+  }
+
+  renderStorage() {
+    if (!this.player) return;
+    const renderList = (id, items, buttonText, action) => {
+      const container = screenEl(id);
+      container.innerHTML = '';
+      if (!items.length) {
+        const empty = document.createElement('p');
+        empty.className = 'storage-empty';
+        empty.textContent = 'Пусто';
+        container.appendChild(empty);
+        return;
+      }
+      items.forEach((item, index) => {
+        const row = document.createElement('div');
+        row.className = 'storage-item';
+        const title = document.createElement('span');
+        title.textContent = item.name;
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = buttonText;
+        button.disabled = buttonText === 'Забрать' && this.player.inventory.length >= this.player.inventoryCapacity;
+        button.addEventListener('click', () => {
+          action(index);
+          this.hud.setInventory(this.player.inventory.length, this.player.inventoryCapacity);
+          this.renderStorage();
+        });
+        row.append(title, button);
+        container.appendChild(row);
+      });
+    };
+    renderList('storageBag', this.player.inventory, 'Убрать', (i) => this.player.storeItem(i));
+    renderList('storageStash', this.player.storage, 'Забрать', (i) => this.player.retrieveItem(i));
+    const count = screenEl('storageCount');
+    count.textContent = `Рюкзак ${this.player.inventory.length}/${this.player.inventoryCapacity} · дома ${this.player.storage.length}`;
+  }
+
+  canExitHide() {
+    if (this.hideRemaining > 0) return false;
+    return this.guards.every((guard) => guard.state !== NPC_STATE.CHASE && guard.state !== NPC_STATE.SEARCH);
+  }
+
+  enterHide() {
+    if (!this.player || this.player.hidden) return;
+    const p = this.player;
+    p.lastSeenPosition = p.position.clone();
+    p.hidden = true;
+    p.frozen = true;
+    p.velocity.set(0, 0, 0);
+    this.hiding = true;
+    this.hideRemaining = this.difficulty.hideSearch + 0.35;
+    this.hideReadyToast = false;
+    this.hideDoorTimer = 0.32;
+    this.house.setWardrobeOpen(true);
+    for (const guard of this.guards) {
+      if (guard.state === NPC_STATE.CHASE) {
+        guard.state = NPC_STATE.SEARCH;
+        guard.searchTimer = this.difficulty.hideSearch;
+        guard.searchTarget = p.lastSeenPosition.clone();
+        guard.suspicion = 0.28;
+      }
+    }
+    this.hud.showPrompt('');
+    this.hud.say('Ты спрятался в шкафу. Жди, пока погоня закончится.', 3.2);
+    this.hud.toast('СПРЯТАЛСЯ', 'Входная дверь должна быть закрыта', 2.2);
+  }
+
+  exitHide() {
+    if (!this.player?.hidden || !this.canExitHide()) return false;
+    this.player.hidden = false;
+    this.player.frozen = false;
+    this.hiding = false;
+    this.hideRemaining = 0;
+    this.hideReadyToast = false;
+    this.hideDoorTimer = 0.35;
+    this.house.setWardrobeOpen(true);
+    this.hud.say('Шаги стихли. Можно выходить.', 2.4);
+    return true;
+  }
+
+  setDifficulty(id) {
+    this.difficultyId = DIFFICULTIES[id] ? id : 'medium';
+    this.difficulty = getDifficulty(this.difficultyId);
+    document.querySelectorAll('[data-difficulty]').forEach((button) => {
+      button.classList.toggle('on', button.dataset.difficulty === this.difficultyId);
+      button.setAttribute?.('aria-pressed', button.dataset.difficulty === this.difficultyId ? 'true' : 'false');
+    });
   }
 
   toggleCrouch() {
@@ -417,7 +606,18 @@ class Game {
     this.showScreen(null, false);
     this.hud.show(false);
     this.hud.setMoney(0);
-    this.hud.setInventory(0, this.mission.productsNeeded);
+    this.hud.setInventory(0, this.player.inventoryCapacity);
+    this.hud.setStamina(1);
+    this.player.stamina = this.player.staminaMax;
+    this.player.hidden = false;
+    this.player.frozen = false;
+    this.hiding = false;
+    this.policeNextAt = this.time + this.difficulty.policeFirst + randRange(this.rng, 0, 18);
+    this.policeActive = false;
+    this.policeState = 'idle';
+    this.street.policeCar.visible = false;
+    this.street.policeCollider.active = false;
+    for (const officer of this.police) officer.object.visible = false;
     this.state = 'intro';
     this.wakeElapsed = 0;
     this.wakeBeat = 0;
@@ -530,7 +730,9 @@ class Game {
     this.alertLevel = 1;
     this.audio.alarm();
     this.hud.toast('ТЕБЯ ЗАМЕТИЛИ', 'Беги или спрячься', 2.4);
-    this.hud.say(guard.name === 'guard2' ? '— Эй! Кто там в подсобке?!' : '— Стой! Сюда нельзя!', 2.5);
+    const line = guard.name === 'camera' ? '— Камера! Проверьте зал!' : guard.name === 'guard2'
+      ? '— Эй! Кто там в подсобке?!' : '— Стой! Сюда нельзя!';
+    this.hud.say(line, 2.5);
     setTimeout(() => { this.flags.alarmNow = false; }, 2500);
   }
 
@@ -640,12 +842,17 @@ class Game {
     const surface = inShop ? 'tile' : (p.position.z > 1.5 && p.position.z < 14.5) ? 'concrete' : 'wood';
     p.surface = surface;
     const forceSneak = !!this.crouchToggle;
-    p.update(dt, input, { forceSneak, hideHands: waking && !this.wakePose?.handsVisible });
+    p.update(dt, input, {
+      forceSneak: forceSneak || this.hiding,
+      hideHands: this.hiding || (waking && !this.wakePose?.handsVisible),
+      difficulty: this.difficulty,
+    });
+    this.hud.setStamina(p.stamina / p.staminaMax);
 
     // footsteps noise model
     const spd = Math.hypot(p.velocity.x, p.velocity.z);
     const crouched = p.crouch > 0.5;
-    const targetNoise = spd < 0.2 ? 0 : crouched ? 0.12 : spd > 3.9 ? 0.85 : spd > 2.2 ? 0.45 : 0.26;
+    const targetNoise = p.hidden || spd < 0.2 ? 0 : crouched ? 0.12 : p.isSprinting ? 0.85 : spd > 2.2 ? 0.45 : 0.26;
     this.noiseLevel = damp(this.noiseLevel, Math.max(targetNoise, this.noiseLevel * 0.7), 6, dt);
     if (this.noiseLevel < 0.02) this.noiseLevel = 0;
     this.hud.setNoise(this.noiseLevel);
@@ -669,22 +876,44 @@ class Game {
     // NPCs
     const gameView = {
       player: p, colliders: this.colliders, noiseLevel: this.noiseLevel,
-      alertLevel: this.alertLevel,
+      alertLevel: this.alertLevel, difficulty: this.difficulty, flags: this.flags,
+      audio: this.audio,
+      time: this.time,
+      surfaceAt: (pos) => pos.z > 14.5 ? 'tile' : pos.z > 2 ? 'concrete' : 'wood',
       lightLevelAt: (pos) => this._lightAt(pos),
       onCaught: (by) => this.onCaught(by),
       onDetected: (g) => this.onDetected(g),
     };
+    this._updateResidentChats(dt);
+    this._updatePolice(dt);
     for (const npc of this.npcs) {
+      if (npc.police && !this.policeActive) continue;
       // NPCs only think when reasonably close (perf on phone)
       const d = npc.pos.distanceTo(p.position);
-      if (d > 26) continue;
+      if (d > 26 && npc.state !== NPC_STATE.CHASE && npc.state !== NPC_STATE.SEARCH) continue;
       npc.update(dt, this.time, this.colliders, gameView);
     }
+    this._updateSecurityCameras(dt);
 
-    // suspicion UI = the most suspicious guard
-    const maxSusp = Math.max(...this.guards.map((g) => g.suspicion), 0);
+    if (this.hiding) {
+      this.hideRemaining = Math.max(0, this.hideRemaining - dt);
+      if (this.hideRemaining <= 0 && this.canExitHide() && !this.hideReadyToast) {
+        this.hideReadyToast = true;
+        this.hud.toast('ТИШИНА', 'Преследователь ушёл. Нажми действие у шкафа.', 2.4);
+      }
+      if (this.hideDoorTimer > 0) {
+        this.hideDoorTimer -= dt;
+        if (this.hideDoorTimer <= 0) this.house.setWardrobeOpen(false);
+      }
+    } else if (this.hideDoorTimer > 0) {
+      this.hideDoorTimer -= dt;
+      if (this.hideDoorTimer <= 0) this.house.setWardrobeOpen(false);
+    }
+
+    // suspicion UI = the most suspicious guard or camera
+    const maxSusp = Math.max(...this.guards.map((g) => g.suspicion), this.cameraSuspicion, 0);
     this.hud.setSuspicion(maxSusp);
-    this.alertLevel = damp(this.alertLevel, this.guards.some((g) => g.state === NPC_STATE.CHASE) ? 1 : 0, 1.5, dt);
+    this.alertLevel = damp(this.alertLevel, this.guards.some((g) => g.state === NPC_STATE.CHASE) || this.cameraSuspicion > 0.7 ? 1 : 0, 1.5, dt);
     this.grade.uniforms.alert.value = this.alertLevel;
 
     // heartbeat when in danger
@@ -692,13 +921,6 @@ class Game {
     if (maxSusp > 0.55 && this._hbTimer <= 0) {
       this.audio.heartbeat();
       this._hbTimer = lerp(1.3, 0.55, maxSusp);
-    }
-
-    // camera cams animation
-    for (const cam of this.shop.cameras) {
-      const yaw = cam.baseYaw + Math.sin(this.time * 0.5 + cam.phase) * cam.sweep;
-      cam.mesh.userData.head.rotation.y = yaw - cam.baseYaw;
-      cam.mesh.userData.led.material.color.setHex(Math.sin(this.time * 3) > 0 ? 0xff2222 : 0x440808);
     }
 
     // dust drift
@@ -725,6 +947,157 @@ class Game {
     this.grade.uniforms.time.value = this.time;
     this.sky.position.copy(this.camera.position);
     if (waking && this.wakeElapsed >= WAKE_DURATION) this._finishWake();
+  }
+
+  _updateResidentChats(dt) {
+    const p = this.player.position;
+    for (const resident of this.residents) {
+      if (resident.chatPartner && this.time >= resident.chatUntil) {
+        resident.chatPartner = null;
+        resident.chatBubble.visible = false;
+      }
+    }
+
+    this.residentChatTimer -= dt;
+    if (this.residentChatTimer <= 0) {
+      const pairs = [];
+      for (let i = 0; i < this.residents.length; i++) {
+        const a = this.residents[i];
+        if (a.chatPartner || a.state !== NPC_STATE.PATROL || a.pos.z < 2 || a.pos.z > 14.4) continue;
+        for (let j = i + 1; j < this.residents.length; j++) {
+          const b = this.residents[j];
+          if (b.chatPartner || b.state !== NPC_STATE.PATROL || b.pos.z < 2 || b.pos.z > 14.4) continue;
+          const distance = a.pos.distanceTo(b.pos);
+          if (distance < 4.2) pairs.push({ a, b, distance });
+        }
+      }
+      if (pairs.length) {
+        pairs.sort((a, b) => a.distance - b.distance);
+        const { a, b } = pairs[Math.floor(this.rng() * Math.min(3, pairs.length))];
+        const chatUntil = this.time + randRange(this.rng, 3.6, 5.4);
+        a.chatPartner = b; b.chatPartner = a;
+        a.chatUntil = chatUntil; b.chatUntil = chatUntil;
+        a.chatBubble.visible = true; b.chatBubble.visible = true;
+        this.audio.chatter();
+        if (Math.min(a.pos.distanceTo(p), b.pos.distanceTo(p)) < 12) {
+          this.hud.say('Соседи тихо переговариваются на тротуаре…', 2.1);
+        }
+        this.residentChatTimer = randRange(this.rng, 18, 32);
+      } else {
+        this.residentChatTimer = 6;
+      }
+    }
+
+    for (const resident of this.residents) {
+      if (!resident.chatBubble.visible) continue;
+      const angleToPlayer = Math.atan2(p.x - resident.pos.x, p.z - resident.pos.z);
+      resident.chatBubble.rotation.y = angleToPlayer - resident.yaw;
+    }
+  }
+
+  _updatePolice(dt) {
+    const allowedStages = ['street', 'shop', 'leaving', 'returnHome'];
+    if (!this.policeActive && this.state === 'playing' && allowedStages.includes(this.mission.stage)
+      && this.time >= this.policeNextAt) {
+      this.policeActive = true;
+      this.policeState = 'approach';
+      this.policeEventTimer = 0;
+      const car = this.street.policeCar;
+      car.position.set(40, 0, 8.3);
+      car.visible = true;
+      this.street.policeCollider.active = true;
+      for (const officer of this.police) {
+        officer.pos.copy(officer.route[0]);
+        officer.object.position.copy(officer.pos);
+        officer.object.visible = true;
+        officer.routeIndex = 0;
+        officer.state = NPC_STATE.PATROL;
+        officer.suspicion = 0;
+      }
+      this.audio.policeSiren();
+      this.hud.toast('ПОЛИЦИЯ ПРИЕХАЛА', 'Служебная машина едет к магазину', 3.2);
+      this.hud.say('С улицы доносится сирена. Держись подальше от входа.', 3.2);
+    }
+    if (!this.policeActive) return;
+
+    const car = this.street.policeCar;
+    const collider = this.street.policeCollider;
+    if (this.policeState === 'approach') {
+      car.position.x = Math.max(-12, car.position.x - 7.5 * dt);
+      if (car.position.x <= -12) {
+        car.position.x = -12;
+        this.policeState = 'parked';
+        this.policeEventTimer = 30;
+      }
+    } else if (this.policeState === 'parked') {
+      this.policeEventTimer -= dt;
+      if (this.policeEventTimer <= 0) this.policeState = 'depart';
+    } else if (this.policeState === 'depart') {
+      car.position.x = Math.min(41, car.position.x + 8.5 * dt);
+      if (car.position.x >= 41) {
+        this.policeActive = false;
+        this.policeState = 'idle';
+        car.visible = false;
+        collider.active = false;
+        for (const officer of this.police) officer.object.visible = false;
+        this.policeNextAt = this.time + this.difficulty.policeEvery + randRange(this.rng, 0, 24);
+      }
+    }
+
+    collider.minX = car.position.x - 2.25;
+    collider.maxX = car.position.x + 2.25;
+    collider.minZ = car.position.z - 1.1;
+    collider.maxZ = car.position.z + 1.1;
+    const flash = Math.floor(this.time * 5) % 2 === 0;
+    car.userData.redLight.material.emissiveIntensity = flash ? 1.7 : 0.18;
+    car.userData.blueLight.material.emissiveIntensity = flash ? 0.18 : 1.7;
+  }
+
+  _updateSecurityCameras(dt) {
+    const disabled = this.time < (this.flags.camerasDisabledUntil ?? 0);
+    const p = this.player.position;
+    let strongest = 0;
+    for (const cam of this.shop.cameras) {
+      const yaw = cam.baseYaw + Math.sin(this.time * 0.5 + cam.phase) * cam.sweep;
+      cam.mesh.userData.head.rotation.y = yaw - cam.baseYaw;
+      cam.mesh.userData.led.material.color.setHex(disabled
+        ? 0x182129 : Math.sin(this.time * 3) > 0 ? 0xff2222 : 0x440808);
+      if (disabled || this.player.hidden || p.z < 14.4 || p.z > 30.2) continue;
+
+      const dx = p.x - cam.pos.x;
+      const dz = p.z - cam.pos.z;
+      const distance = Math.hypot(dx, dz);
+      if (distance > cam.range) continue;
+      const bearing = Math.atan2(dx, dz);
+      const diff = Math.abs(Math.atan2(Math.sin(bearing - yaw), Math.cos(bearing - yaw)));
+      if (diff > cam.fov || this.colliders.lineBlocked(cam.pos.x, cam.pos.z, p.x, p.z)) continue;
+      let visibility = (1 - distance / cam.range) * (1 - 0.55 * diff / cam.fov);
+      visibility *= 1 - this.player.crouch * 0.4;
+      strongest = Math.max(strongest, visibility);
+    }
+
+    if (disabled || this.player.hidden) {
+      this.cameraSuspicion = Math.max(0, this.cameraSuspicion - dt * 0.55);
+    } else if (strongest > 0.02) {
+      this.cameraSuspicion = clamp(this.cameraSuspicion + strongest * this.difficulty.cameraGain * dt * 0.58, 0, 1);
+    } else {
+      this.cameraSuspicion = Math.max(0, this.cameraSuspicion - dt * 0.3);
+    }
+
+    if (this.shop.cameraConsoleLed) {
+      this.shop.cameraConsoleLed.material.color.setHex(disabled ? 0x39ff9a : 0x4d7892);
+    }
+    if (this.cameraSuspicion >= 0.98 && !this.flags.alarmNow) {
+      this.cameraSuspicion = 0.4;
+      const pPos = this.player.position;
+      const responders = this.guards.filter((guard) => !guard.police && guard.pos.distanceTo(pPos) < 18);
+      for (const guard of responders) {
+        guard.state = NPC_STATE.CHASE;
+        guard.alertTimer = this.difficulty.chaseDuration;
+        guard.searchTarget = null;
+      }
+      this.onDetected({ name: 'camera' });
+    }
   }
 
   _updateBlink(dt) {

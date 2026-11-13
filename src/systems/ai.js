@@ -23,9 +23,15 @@ export class NPC {
     } = opts;
     this.name = name;
     this.assets = assets;
+    this.rng = makeRng(seed * 31 + 7);
     this.humanoid = new Humanoid(assets, { ...look, seed, kind });
     this.object = this.humanoid.root;
     this.currentSpeed = 0;
+    this.footstepTimer = randRange(this.rng, 0.15, 0.65);
+    this.chatPartner = null;
+    this.chatUntil = 0;
+    this.chatBubble = this._makeChatBubble();
+    this.object.add(this.chatBubble);
     this.route = route.map((p) => new THREE.Vector3(p[0], 0, p[1]));
     this.routeIndex = 0;
     this.speed = speed;
@@ -41,7 +47,6 @@ export class NPC {
     this.alertTimer = 0;
     this.searchTimer = 0;
     this.target = this.route[1] || this.pos.clone();
-    this.rng = makeRng(seed * 31 + 7);
     this.idleSway = idleSway;
     this.idlePhase = randRange(this.rng, 0, 10);
     this.lookAngle = 0;
@@ -50,6 +55,24 @@ export class NPC {
     this.lastPos = this.pos.clone();
     this.routeSide = new THREE.Vector3();
     this.object.position.copy(this.pos);
+  }
+
+  _makeChatBubble() {
+    const bubble = new THREE.Group();
+    bubble.visible = false;
+    const paper = new THREE.MeshBasicMaterial({ color: 0xeaf7ff, transparent: true, opacity: 0.94, depthWrite: false });
+    const ink = new THREE.MeshBasicMaterial({ color: 0x274155, depthWrite: false });
+    const shell = new THREE.Mesh(new THREE.SphereGeometry(0.105, 12, 8), paper);
+    shell.scale.set(1.45, 0.82, 0.3);
+    shell.position.set(0, 0, 0.02);
+    bubble.add(shell);
+    for (const x of [-0.045, 0, 0.045]) {
+      const dot = new THREE.Mesh(new THREE.SphereGeometry(0.012, 7, 5), ink);
+      dot.position.set(x, 0, 0.055);
+      bubble.add(dot);
+    }
+    bubble.position.set(0, 2.0, 0.04);
+    return bubble;
   }
 
   faceTowards(x, z, dt, rate = 6) {
@@ -87,7 +110,23 @@ export class NPC {
     let speedNow = 0;
     let crouch = 0;
 
-    this.currentSpeed = this.baseSpeed + this.bonusSpeed;
+    this.currentSpeed = this.baseSpeed * (game.difficulty?.patrolSpeed ?? 1) + this.bonusSpeed;
+
+    if (this.chatPartner && this.chatUntil > t && (this.state === NPC_STATE.PATROL || this.state === NPC_STATE.IDLE)) {
+      this.humanoid.setPose('idle');
+      this.faceTowards(this.chatPartner.pos.x, this.chatPartner.pos.z, dt, 4.2);
+      this.headYaw = Math.sin(t * 2.4 + this.idlePhase) * 0.32;
+      this.object.position.copy(this.pos);
+      this.humanoid.faceYaw(this.yaw);
+      this.humanoid.lookTarget.x = damp(this.humanoid.lookTarget.x, this.headYaw, 4, dt);
+      this.humanoid.update(dt, 0, 0, t);
+      return;
+    }
+    if (this.chatPartner && this.chatUntil <= t) {
+      this.chatPartner = null;
+      this.chatBubble.visible = false;
+    }
+
     if (this.state === NPC_STATE.PATROL || this.state === NPC_STATE.IDLE) {
       if (this.sitting) {
         this.humanoid.setPose('sit');
@@ -96,7 +135,6 @@ export class NPC {
       } else if (this.route.length > 1) {
         this.humanoid.setPose('idle');
         const target = this.route[this.routeIndex];
-        const before = this.pos.clone();
         const moved = this.moveTowards(target, dt, colliders);
         speedNow = moved / Math.max(dt, 1e-4);
         if (this.pos.distanceTo(target) < 0.45) {
@@ -124,24 +162,34 @@ export class NPC {
         this.headYaw = Math.sin(t * 1.2) * 0.9;
       }
     } else if (this.state === NPC_STATE.CHASE) {
-      this.currentSpeed = this.baseSpeed * 1.9 + this.bonusSpeed;
       const p = game.player.position;
-      const moved = this.moveTowards(p, dt, colliders, 0.34);
-      speedNow = moved / Math.max(dt, 1e-4);
-      this.alertTimer -= dt;
-      if (this.alertTimer <= 0) { this.state = NPC_STATE.SEARCH; this.searchTimer = 6; }
-      if (this.pos.distanceTo(p) < 1.4) game.onCaught('guard');
-    } else if (this.state === NPC_STATE.SEARCH) {
-      this.currentSpeed = this.baseSpeed * 1.1 + this.bonusSpeed;
-      const before = this.pos.clone();
-      if (this.searchTarget) {
-        this.moveTowards(this.searchTarget, dt, colliders, 0.32);
+      if (game.player.hidden) {
+        const lastSeen = game.player.lastSeenPosition || p;
+        this.state = NPC_STATE.SEARCH;
+        this.searchTimer = game.difficulty?.hideSearch ?? 5;
+        this.searchTarget = lastSeen.clone();
+      } else {
+        this.currentSpeed = this.baseSpeed * 1.9 * (game.difficulty?.chaseSpeed ?? 1) + this.bonusSpeed;
+        const moved = this.moveTowards(p, dt, colliders, 0.34);
+        speedNow = moved / Math.max(dt, 1e-4);
+        this.alertTimer -= dt;
+        if (this.alertTimer <= 0) {
+          this.state = NPC_STATE.SEARCH;
+          this.searchTimer = game.difficulty?.searchDuration ?? 6;
+          this.searchTarget = p.clone();
+        }
+        if (!game.player.hidden && this.pos.distanceTo(p) < 1.4) game.onCaught('guard');
       }
+    } else if (this.state === NPC_STATE.SEARCH) {
+      this.currentSpeed = this.baseSpeed * 1.1 * (game.difficulty?.patrolSpeed ?? 1) + this.bonusSpeed;
+      const before = this.pos.clone();
+      if (this.searchTarget) this.moveTowards(this.searchTarget, dt, colliders, 0.32);
       this.searchTimer -= dt;
       if (!this.searchTarget || this.pos.distanceTo(this.searchTarget) < 0.6) {
+        const origin = game.player.lastSeenPosition || this.pos;
         this.searchTarget = new THREE.Vector3(
-          clamp(this.pos.x + randRange(this.rng, -4, 4), -7, 7), 0,
-          clamp(this.pos.z + randRange(this.rng, -4, 4), 15, 29));
+          clamp(origin.x + randRange(this.rng, -3.5, 3.5), -32, 32), 0,
+          clamp(origin.z + randRange(this.rng, -3.5, 3.5), -8, 30));
       }
       speedNow = this.pos.distanceTo(before) / Math.max(dt, 1e-4);
       if (this.searchTimer <= 0) { this.state = NPC_STATE.PATROL; this.searchTarget = null; }
@@ -151,6 +199,17 @@ export class NPC {
     this.humanoid.faceYaw(this.yaw);
     this.humanoid.lookTarget.x = damp(this.humanoid.lookTarget.x, this.headYaw, 4, dt);
     this.humanoid.update(dt, speedNow, crouch, t);
+    if (speedNow > 0.3) {
+      this.footstepTimer -= dt;
+      if (this.footstepTimer <= 0) {
+        const surface = game.surfaceAt?.(this.pos) || (this.pos.z > 14.5 ? 'tile' : 'concrete');
+        const volume = this.state === NPC_STATE.CHASE ? 0.55 : this instanceof Guard ? 0.34 : 0.22;
+        game.audio?.footstep?.(surface, volume);
+        this.footstepTimer = randRange(this.rng, 0.42, 0.66);
+      }
+    } else {
+      this.footstepTimer = Math.max(0, this.footstepTimer - dt);
+    }
   }
 }
 
@@ -171,16 +230,18 @@ export class Guard extends NPC {
   /** How visible the player is from here, 0..1 (0 = unseen). */
   visibility(game) {
     const p = game.player.position;
+    if (game.player.hidden) return 0;
     const dx = p.x - this.pos.x;
     const dz = p.z - this.pos.z;
     const dist = Math.hypot(dx, dz);
-    if (dist > this.sightRange) return 0;
+    const sightRange = this.sightRange * (game.difficulty?.guardSight ?? 1);
+    if (dist > sightRange) return 0;
     // view cone based on facing
     const toPlayer = Math.atan2(dx, dz);
     const diff = Math.abs(shortestAngle(this.yaw, toPlayer));
     if (diff > this.fov) return 0;
     if (game.colliders.lineBlocked(this.pos.x, this.pos.z, p.x, p.z)) return 0;
-    let v = 1 - dist / this.sightRange;
+    let v = 1 - dist / sightRange;
     // cone centre is far more effective than the edge of vision
     v *= 0.55 + 0.45 * (1 - diff / this.fov);
     // crouching helps, standing in bright light hurts
@@ -200,14 +261,16 @@ export class Guard extends NPC {
     }
     const vis = this.visibility(game);
     const noise = game.noiseLevel;
-    const hearing = clamp((noise - 0.25) * 1.4, 0, 1) * clamp(1 - this.pos.distanceTo(game.player.position) / this.hearRange, 0, 1);
-    const gain = vis * 0.9 + hearing * 1.1;
-    const decay = vis > 0.02 ? 0.02 : 0.35;
+    const hearing = clamp((noise - 0.25) * 1.4, 0, 1)
+      * clamp(1 - this.pos.distanceTo(game.player.position) / this.hearRange, 0, 1)
+      * (game.difficulty?.hearing ?? 1);
+    const gain = vis * 0.9 * (game.difficulty?.suspicionGain ?? 1) + hearing * 1.1;
+    const decay = vis > 0.02 && !game.player.hidden ? 0.02 : 0.35;
     this.suspicion = clamp(this.suspicion + gain * dt - decay * dt, 0, 1);
 
     if (this.suspicion >= 0.98) {
       this.state = NPC_STATE.CHASE;
-      this.alertTimer = 7;
+      this.alertTimer = game.difficulty?.chaseDuration ?? 7;
       this.suspicion = 0.5;
       this.humanoid.setPose('idle');
       this.onSpot?.();

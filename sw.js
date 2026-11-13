@@ -1,5 +1,5 @@
 /* IslamWork service worker — cache-first so the game boots offline. */
-const CACHE = 'islamwork-v3';
+const CACHE = 'islamwork-v4';
 const ASSETS = [
   './', './index.html', './game.js', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-1024.png',

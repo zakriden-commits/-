@@ -38,6 +38,11 @@
   .money{font-variant-numeric:tabular-nums;font-weight:700;color:var(--gold)}
   .task{max-width:62vw;line-height:1.3}
   .task b{color:var(--cyan);font-weight:600}
+  .task small{display:block;margin-top:4px;font-size:11px;line-height:1.28;color:#c4d3dc;opacity:.96}
+  .stamina-pill{display:flex;align-items:center;gap:7px;font-size:10px!important;white-space:nowrap}
+  .stamina-track{width:54px;height:6px;border-radius:99px;background:rgba(255,255,255,.13);overflow:hidden}
+  .stamina-track i{display:block;width:100%;height:100%;border-radius:inherit;transition:width .14s linear}
+  #staminaValue{min-width:26px;text-align:right;font-variant-numeric:tabular-nums;color:#d9fff8}
   #topbar{display:flex;flex-direction:column;gap:8px}
   #crosshair{position:fixed;left:50%;top:50%;width:6px;height:6px;margin:-3px 0 0 -3px;border-radius:50%;
     background:rgba(233,244,255,.55);box-shadow:0 0 8px rgba(80,230,212,.5);opacity:0;transition:opacity .2s}
@@ -120,6 +125,18 @@
   .toggle button{pointer-events:auto;padding:8px 14px;border-radius:11px;background:rgba(255,255,255,.05);
     border:1px solid rgba(255,255,255,.14);color:#dfeaf3;font-size:13px}
   .toggle button.on{border-color:rgba(120,230,212,.6);background:rgba(80,230,212,.16);color:#d9fff8}
+  .difficulty-set{margin:14px 0 0;gap:7px}
+  .difficulty-set span{font-size:12px;color:#9db3c6}
+  .difficulty-set button{min-width:0;padding:9px 12px;border-radius:11px;font-size:12px;font-weight:650}
+  .storage-count{margin:8px 0 2px;color:#a9bdca;font-size:12px}
+  .storage-card{margin-top:10px;padding:12px 14px}
+  .storage-list{display:grid;gap:7px;margin-top:8px}
+  .storage-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 8px;
+    border-radius:10px;background:rgba(255,255,255,.035);font-size:13px}
+  .storage-item button{pointer-events:auto;border:1px solid rgba(120,230,212,.35);border-radius:8px;
+    background:rgba(80,230,212,.12);color:#d9fff8;padding:6px 9px;font-size:11px}
+  .storage-item button:disabled{opacity:.42}
+  .storage-empty{margin:3px 0;color:#7f93a3;font-size:12px}
   @media (min-width:820px){ .hint{max-width:44ch} }
 </style>
 </head>
@@ -136,8 +153,9 @@
     </div>
   </div>
   <div class="row" style="position:absolute;left:14px;right:14px;bottom:calc(env(safe-area-inset-bottom) + 160px)">
-    <div class="pill" id="inv" style="font-size:12px">рюкзак: 0/3</div>
-    <div class="pill" id="noise" style="font-size:12px">шум: тихо</div>
+    <div class="pill" id="inv" style="font-size:11px">рюкзак: 0/10</div>
+    <div class="pill" id="noise" style="font-size:11px">шум: тихо</div>
+    <div class="pill stamina-pill"><span>СИЛЫ</span><span class="stamina-track"><i id="staminaFill"></i></span><b id="staminaValue">100%</b></div>
   </div>
 </div>
 <div id="crosshair"></div>
@@ -155,6 +173,12 @@
   <div class="logo">ISLAMWORK<small>ТИХАЯ СМЕНА</small></div>
   <div class="tag">Ты только что переехал в старый дом на окраине. Денег почти нет.
     Ночью магазин за углом закрывается — но касса, сейф и полки остаются.</div>
+  <div class="toggle difficulty-set" role="group" aria-label="Сложность">
+    <span>Сложность</span>
+    <button type="button" data-difficulty="easy" aria-pressed="false">ЛЁГКАЯ</button>
+    <button type="button" data-difficulty="medium" class="on" aria-pressed="true">СРЕДНЯЯ</button>
+    <button type="button" data-difficulty="hard" aria-pressed="false">СЛОЖНАЯ</button>
+  </div>
   <button class="btn" id="btnStart">НАЧАТЬ</button>
   <button class="btn ghost small" id="btnHelp">УПРАВЛЕНИЕ</button>
   <div class="hint"><b>Совет:</b> на iPhone нажми «Поделиться» → «На экран „Домой“»,
@@ -168,17 +192,29 @@
     <div class="stat"><span>Идти</span><span>левый стик на экране</span></div>
     <div class="stat"><span>Осмотреться</span><span>свайп справа</span></div>
     <div class="stat"><span>Красться</span><span>кнопка «ПРИСЕСТЬ»</span></div>
+    <div class="stat"><span>Бежать</span><span>максимальный наклон стика / F</span></div>
+    <div class="stat"><span>Силы</span><span>восстанавливаются, когда не бежишь</span></div>
     <div class="stat"><span>Действие</span><span>кнопка «ДЕЙСТВИЕ»</span></div>
-    <div class="stat"><span>На ПК</span><span>WASD + мышь, E, Shift</span></div>
+    <div class="stat"><span>На ПК</span><span>WASD + мышь, E, Shift, F</span></div>
   </div>
   <div class="card">
-    <b>Как играть.</b> Осмотрись в доме, забери деньги из ящика и кармана пальто.
-    Выйди на улицу, дойди до магазина. Внутри не шуми и не попадай в конус обзора
-    охранника: шкала подозрения наверху заполнится — тебя заметят.
-    Нужно взять <b>3 товара</b>, обчистить кассу и, если найдёшь код в подсобке, — сейф.
-    У двери подсобки нажми <b>ДЕЙСТВИЕ</b>, чтобы тихо открыть проход.
+    <b>Как играть.</b> Осмотрись в доме и забери деньги. Можно сложить лишние вещи в сундук у стены спальни.
+    Выйди на улицу и дойди до магазина. Беги только по необходимости: полоса сил влияет на скорость.
+    Внутри избегай конусов обзора охраны и камер. На полках ищи упаковки: хлеб — слева у входа,
+    консервы — слева посередине, чай — слева сзади; молоко и печенье — в правых рядах.
+    За дверью подсобки лежат хак-планшет и отмычки; планшетом можно временно отключить камеры.
+    Если погоня дошла до дома, закрой входную дверь, спрячься в шкафу и дождись, пока шаги стихнут.
   </div>
   <button class="btn ghost" id="btnHelpBack">НАЗАД</button>
+</div>
+
+<div class="screen" id="screenStorage">
+  <div class="phase">Домашняя спальня</div>
+  <div class="logo" style="font-size:clamp(26px,7vw,38px)">ХРАНИЛИЩЕ</div>
+  <div class="storage-count" id="storageCount">Рюкзак 0/10 · дома 0</div>
+  <div class="card storage-card"><b>С собой</b><div class="storage-list" id="storageBag"></div></div>
+  <div class="card storage-card"><b>В сундуке</b><div class="storage-list" id="storageStash"></div></div>
+  <button class="btn ghost" id="btnStorageClose">ЗАКРЫТЬ</button>
 </div>
 
 <div class="screen" id="screenPause">

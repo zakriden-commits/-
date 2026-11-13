@@ -120,6 +120,21 @@ export class AudioSystem {
     }
   }
 
+  chatter() {
+    // Quiet, indistinct conversational texture for nearby residents.
+    this.noise({ dur: 0.22, gain: 0.028, filterType: 'bandpass', freq: 740, q: 1.1 });
+    this.tone({ freq: 185, dur: 0.16, type: 'triangle', gain: 0.018, glide: 205 });
+  }
+
+  policeSiren() {
+    for (let i = 0; i < 5; i++) {
+      setTimeout(() => this.tone({
+        freq: i % 2 ? 760 : 520, dur: 0.34, type: 'sawtooth', gain: 0.075,
+        glide: i % 2 ? 520 : 760,
+      }), i * 290);
+    }
+  }
+
   heartbeat() {
     this.tone({ freq: 62, dur: 0.16, type: 'sine', gain: 0.28 });
     setTimeout(() => this.tone({ freq: 54, dur: 0.2, type: 'sine', gain: 0.2 }), 170);

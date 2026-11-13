@@ -12,12 +12,14 @@ export class Humanoid {
   constructor(assets, opts = {}) {
     const {
       skin = 0xc99a72, shirt = 0x3f6f8a, pants = 0x2a3242, shoes = 0x1a1a1d,
-      hair = 0x2a1f16, height = 1.0, kind = 'adult', apron = null, hat = null,
+      hair = 0x2a1f16, hairStyle = 'short', beard = false, height = 1.0, kind = 'adult', apron = null, hat = null,
       vest = null, badge = null, seed = 1, cap = null, scarf = null,
     } = opts;
 
     this.assets = assets;
     this.rng = makeRng(seed);
+    this.gaitTempo = randRange(this.rng, 0.92, 1.08);
+    this.armSwingScale = randRange(this.rng, 0.88, 1.16);
     this.heightScale = height;
     this.root = new THREE.Group();
     this.body = new THREE.Group();
@@ -106,12 +108,38 @@ export class Humanoid {
     if (hair !== null) {
       const cap0 = mesh(sphere(headR * 1.03, 16), hairMat, 0, headR * 1.02, -0.008 * hs);
       cap0.scale.set(1.0, 1.0, 1.02);
-      // clip the front: keep the cap slightly back and above the eyes
-      cap0.geometry = cap0.geometry; // shared sphere
       headPivot.add(cap0);
-      const fringe = mesh(rbox(0.2 * hs, 0.06 * hs, 0.04 * hs, 0.02), hairMat, 0, headR * 1.62, headR * 0.6);
-      fringe.rotation.x = 0.5;
-      headPivot.add(fringe);
+      if (hairStyle !== 'long' && hairStyle !== 'bun') {
+        const fringe = mesh(rbox(0.2 * hs, 0.06 * hs, 0.04 * hs, 0.02), hairMat, 0, headR * 1.62, headR * 0.6);
+        fringe.rotation.x = 0.5;
+        headPivot.add(fringe);
+      }
+      if (hairStyle === 'long') {
+        for (const s of [-1, 1]) {
+          const lock = mesh(rbox(0.055 * hs, 0.24 * hs, 0.07 * hs, 0.025), hairMat,
+            s * headR * 0.82, -headR * 0.2, -headR * 0.2);
+          lock.rotation.z = -s * 0.08;
+          headPivot.add(lock);
+        }
+      } else if (hairStyle === 'bun') {
+        headPivot.add(mesh(sphere(headR * 0.43, 10), hairMat, 0, headR * 1.75, -headR * 0.7));
+        const sidePart = mesh(rbox(0.19 * hs, 0.045 * hs, 0.04 * hs, 0.018), hairMat, 0, headR * 1.6, headR * 0.52);
+        sidePart.rotation.x = 0.42;
+        headPivot.add(sidePart);
+      } else if (hairStyle === 'curly') {
+        for (const [x, y, z, r] of [
+          [-0.07, 0.12, -0.015, 0.048], [0, 0.15, -0.01, 0.05], [0.07, 0.12, -0.015, 0.048],
+          [-0.09, 0.07, -0.01, 0.04], [0.09, 0.07, -0.01, 0.04],
+        ]) headPivot.add(mesh(sphere(r * hs, 8), hairMat, x * hs, y * hs, z * hs));
+      }
+    }
+
+    if (beard) {
+      const beardMat = new THREE.MeshStandardMaterial({ color: hair, roughness: 0.95 });
+      const beard = mesh(rbox(0.13 * hs, 0.09 * hs, 0.045 * hs, 0.03), beardMat,
+        0, headR * 0.15, headR * 0.85);
+      beard.rotation.x = -0.18;
+      headPivot.add(beard);
     }
 
     if (hat) {
@@ -131,16 +159,28 @@ export class Humanoid {
       const pivot = new THREE.Group();
       pivot.position.set(side * 0.25 * hs, 0.4 * hs, 0);
       torso.add(pivot);
-      // upper arm
-      pivot.add(mesh(cyl(0.055 * hs, 0.048 * hs, 0.28 * hs, 10), shirtMat, 0, -0.14 * hs, 0));
-      pivot.add(mesh(sphere(0.058 * hs, 10), shirtMat, 0, 0, 0));
+      // Rounded upper and lower arms have a visible shoulder, elbow and wrist
+      // instead of the thin straight-cylinder silhouette of the old rig.
+      pivot.add(mesh(new THREE.CapsuleGeometry(0.058 * hs, 0.16 * hs, 5, 10), shirtMat, 0, -0.14 * hs, 0));
+      pivot.add(mesh(sphere(0.062 * hs, 12), shirtMat, 0, 0, 0));
       const elbow = new THREE.Group();
       elbow.position.y = -0.28 * hs;
       pivot.add(elbow);
-      elbow.add(mesh(cyl(0.045 * hs, 0.04 * hs, 0.26 * hs, 10), skinMat, 0, -0.13 * hs, 0));
-      const hand = mesh(sphere(0.05 * hs, 10), skinMat, 0, -0.27 * hs, 0);
-      hand.scale.set(0.85, 1.1, 0.6);
-      elbow.add(hand);
+      elbow.add(mesh(new THREE.CapsuleGeometry(0.047 * hs, 0.15 * hs, 5, 10), skinMat, 0, -0.125 * hs, 0));
+
+      const palm = mesh(rbox(0.09 * hs, 0.105 * hs, 0.065 * hs, 0.035 * hs, 3), skinMat,
+        0, -0.31 * hs, 0.018 * hs);
+      elbow.add(palm);
+      for (let finger = 0; finger < 4; finger++) {
+        const x = (finger - 1.5) * 0.022 * hs;
+        const length = (finger === 1 || finger === 2 ? 0.064 : 0.052) * hs;
+        elbow.add(mesh(new THREE.CapsuleGeometry(0.012 * hs, length * 0.55, 3, 7), skinMat,
+          x, -0.365 * hs - (finger === 1 || finger === 2 ? 0.004 * hs : 0), 0.02 * hs));
+      }
+      const thumb = mesh(new THREE.CapsuleGeometry(0.014 * hs, 0.045 * hs, 3, 7), skinMat,
+        side * 0.054 * hs, -0.315 * hs, 0.018 * hs);
+      thumb.rotation.z = -side * 0.6;
+      elbow.add(thumb);
       return { pivot, elbow };
     };
     this.armL = makeArm(-1);
@@ -220,7 +260,7 @@ export class Humanoid {
     const hs = this.hs;
     const targetWalk = clamp(speed / 1.4, 0, 1.6);
     this.walkAmount = damp(this.walkAmount, targetWalk, 9, dt);
-    this.phase += dt * (4.2 + speed * 3.4) * (speed > 0.05 ? 1 : 0.35);
+    this.phase += dt * (4.2 + speed * 3.4) * this.gaitTempo * (speed > 0.05 ? 1 : 0.35);
 
     const w = this.walkAmount;
     const s = Math.sin(this.phase);
@@ -256,7 +296,7 @@ export class Humanoid {
     }
 
     // arms
-    const armSwing = 0.42 * w;
+    const armSwing = 0.42 * w * this.armSwingScale;
     const tuck = crouch * 0.5;
     this.armL.pivot.rotation.x = damp(this.armL.pivot.rotation.x, -s * armSwing - tuck, 10, dt);
     this.armR.pivot.rotation.x = damp(this.armR.pivot.rotation.x, s * armSwing - tuck, 10, dt);
