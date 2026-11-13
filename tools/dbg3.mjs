@@ -1,0 +1,14 @@
+import * as THREE from 'three';
+const cam = new THREE.PerspectiveCamera(60, 1, 0.1, 100);
+cam.position.set(0,3,8); cam.lookAt(0,0,0);
+cam.updateMatrixWorld(true);
+cam.matrixWorldInverse.copy(cam.matrixWorld).invert();
+cam.updateProjectionMatrix();
+const vp = new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+console.log('vp', vp.elements.map(v => +v.toFixed(2)).join(', '));
+const p = new THREE.Vector3(0,0,0);
+const arr = vp.elements;
+const x = p.x*arr[0] + p.y*arr[4] + p.z*arr[8] + arr[12];
+const y = p.x*arr[1] + p.y*arr[5] + p.z*arr[9] + arr[13];
+const w = p.x*arr[3] + p.y*arr[7] + p.z*arr[11] + arr[15];
+console.log('origin ->', x/w, y/w, w);

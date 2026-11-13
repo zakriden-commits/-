@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1424"/><stop offset="1" stop-color="#1b2a4a"/>
+    </linearGradient>
+    <linearGradient id="neon" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#2ce8d0"/><stop offset="1" stop-color="#b6ff3d"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="18" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <g opacity="0.35" stroke="url(#neon)" stroke-width="6" fill="none">
+    <path d="M0 700 L1024 610"/><path d="M0 820 L1024 745"/><path d="M0 930 L1024 880"/>
+    <path d="M160 1024 L260 560"/><path d="M880 1024 L790 545"/>
+  </g>
+  <path d="M140 610 h744 a26 26 0 0 1 0 52 h-744 a26 26 0 0 1 0-52z" fill="none" stroke="url(#neon)" stroke-width="16" filter="url(#glow)" opacity="0.9"/>
+  <text x="512" y="470" font-family="Helvetica,Arial,sans-serif" font-size="300" font-weight="800"
+        text-anchor="middle" fill="none" stroke="url(#neon)" stroke-width="14" filter="url(#glow)">IW</text>
+  <text x="512" y="880" font-family="Helvetica,Arial,sans-serif" font-size="86" font-weight="700"
+        text-anchor="middle" fill="#e8f6ff" letter-spacing="10" opacity="0.9">ISLAMWORK</text>
+</svg>

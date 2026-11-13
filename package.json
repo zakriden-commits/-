@@ -1,0 +1,22 @@
+{
+  "name": "islamwork",
+  "version": "1.0.0",
+  "private": true,
+  "description": "IslamWork - 3D stealth game for iPhone (PWA)",
+  "scripts": {
+    "test": "node tests/world.test.mjs && node tests/playthrough.test.mjs && node tests/wake.test.mjs",
+    "build": "node build.mjs",
+    "dev": "node build.mjs --watch & node server.mjs",
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "three": "0.169.0"
+  },
+  "devDependencies": {
+    "@napi-rs/canvas": "^1.1.1",
+    "@sparticuz/chromium": "^131.0.0",
+    "esbuild": "^0.25.0",
+    "playwright-core": "^1.48.0"
+  },
+  "type": "module"
+}

@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
+<meta name="theme-color" content="#070b12" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="IslamWork" />
+<meta name="description" content="IslamWork — 3D стелс-игра: тихая работа ночью." />
+<meta name="format-detection" content="telephone=no" />
+<title>IslamWork</title>
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+<link rel="icon" href="icons/favicon.png" type="image/png" />
+<style>
+  :root{
+    --bg:#06080f; --ink:#e9f4ff; --dim:#93a6bd;
+    --cyan:#4fe6d4; --lime:#b6ff5c; --danger:#ff4d5e; --gold:#ffd166;
+    --glass:rgba(10,17,28,.62); --stroke:rgba(120,200,215,.22);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;overflow:hidden;background:#05070c;color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Roboto,system-ui,sans-serif;
+    user-select:none;-webkit-user-select:none;overscroll-behavior:none;touch-action:none}
+  #app{position:fixed;inset:0}
+  canvas{display:block;width:100%;height:100%;touch-action:none}
+
+  /* ---------- HUD ---------- */
+  #hud{position:fixed;inset:0;pointer-events:none;opacity:0;transition:opacity .4s ease;
+    padding:calc(env(safe-area-inset-top) + 10px) calc(env(safe-area-inset-right) + 14px)
+            calc(env(safe-area-inset-bottom) + 10px) calc(env(safe-area-inset-left) + 14px)}
+  #hud.on{opacity:1}
+  .row{display:flex;gap:8px;align-items:center;justify-content:space-between}
+  .pill{background:var(--glass);border:1px solid var(--stroke);border-radius:14px;
+    padding:8px 12px;font-size:13px;letter-spacing:.02em;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+  .money{font-variant-numeric:tabular-nums;font-weight:700;color:var(--gold)}
+  .task{max-width:62vw;line-height:1.3}
+  .task b{color:var(--cyan);font-weight:600}
+  #topbar{display:flex;flex-direction:column;gap:8px}
+  #crosshair{position:fixed;left:50%;top:50%;width:6px;height:6px;margin:-3px 0 0 -3px;border-radius:50%;
+    background:rgba(233,244,255,.55);box-shadow:0 0 8px rgba(80,230,212,.5);opacity:0;transition:opacity .2s}
+  #crosshair.on{opacity:.9}
+  #suspicion{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 16px);transform:translateX(-50%);
+    width:132px;height:5px;border-radius:99px;background:rgba(255,255,255,.12);opacity:0;transition:opacity .25s;overflow:hidden}
+  #suspicion i{display:block;height:100%;width:0%;background:linear-gradient(90deg,#ffd166,#ff4d5e);transition:width .08s linear}
+  #prompt{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 132px);transform:translateX(-50%);
+    pointer-events:auto;display:none;align-items:center;gap:10px;background:var(--glass);
+    border:1px solid rgba(120,230,212,.45);border-radius:999px;padding:10px 18px 10px 12px;
+    font-size:14px;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+    box-shadow:0 8px 30px rgba(0,0,0,.45),0 0 0 1px rgba(80,230,212,.12) inset}
+  #prompt.on{display:flex;animation:pop .22s ease}
+  #prompt .key{display:grid;place-items:center;width:26px;height:26px;border-radius:8px;
+    background:rgba(80,230,212,.16);border:1px solid rgba(80,230,212,.5);color:var(--cyan);font-size:13px;font-weight:700}
+  @keyframes pop{from{transform:translateX(-50%) translateY(6px) scale(.96);opacity:0}to{transform:translateX(-50%);opacity:1}}
+  #subtitle{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 70px);transform:translateX(-50%);
+    max-width:86vw;text-align:center;font-size:15px;line-height:1.45;color:#eaf6ff;
+    text-shadow:0 2px 12px rgba(0,0,0,.9),0 0 2px #000;opacity:0;transition:opacity .3s}
+  #subtitle.on{opacity:1}
+  #toast{position:fixed;left:50%;top:38%;transform:translate(-50%,-50%) scale(.9);text-align:center;
+    pointer-events:none;opacity:0;transition:opacity .25s,transform .25s}
+  #toast.on{opacity:1;transform:translate(-50%,-50%) scale(1)}
+  #toast .big{font-size:22px;font-weight:800;letter-spacing:.04em}
+  #toast .small{margin-top:6px;font-size:14px;color:var(--dim)}
+  #stick{position:fixed;left:calc(env(safe-area-inset-left) + 26px);bottom:calc(env(safe-area-inset-bottom) + 26px);
+    width:118px;height:118px;border-radius:50%;border:1px solid rgba(120,200,215,.18);
+    background:radial-gradient(circle at 50% 50%,rgba(20,40,55,.35),rgba(10,18,28,.18));
+    opacity:0;pointer-events:none;transition:opacity .2s,transform .2s}
+  #stick.on{opacity:.5;pointer-events:auto}
+  #stick .nub{position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px 0 0 -23px;border-radius:50%;
+    background:radial-gradient(circle at 40% 35%,rgba(180,255,235,.5),rgba(60,150,145,.28));
+    border:1px solid rgba(150,255,235,.45);box-shadow:0 0 18px rgba(80,230,212,.3)}
+  #stick.on.active{opacity:.95}
+  #btns{position:fixed;right:calc(env(safe-area-inset-right) + 20px);bottom:calc(env(safe-area-inset-bottom) + 26px);
+    display:flex;flex-direction:column;gap:10px;opacity:0;pointer-events:none;transition:opacity .2s}
+  #btns.on{opacity:1;pointer-events:auto}
+  .abtn{width:64px;height:64px;border-radius:50%;background:var(--glass);border:1px solid var(--stroke);
+    color:var(--ink);display:grid;place-items:center;font-size:11px;font-weight:700;letter-spacing:.04em;
+    backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);box-shadow:0 6px 20px rgba(0,0,0,.35)}
+  .abtn:active{transform:scale(.94);border-color:rgba(120,230,212,.7)}
+  .abtn.primary{width:76px;height:76px;background:radial-gradient(circle at 40% 35%,rgba(80,230,212,.35),rgba(10,25,35,.9));
+    border-color:rgba(120,230,212,.55);color:#d9fff8;font-size:12px}
+  .abtn.warn{border-color:rgba(255,77,94,.45);color:#ffc2c8}
+
+  /* ---------- screens ---------- */
+  .screen{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;
+    padding:calc(env(safe-area-inset-top) + 24px) 22px calc(env(safe-area-inset-bottom) + 24px);
+    background:radial-gradient(120% 90% at 50% 0%,rgba(20,40,60,.75),rgba(4,6,10,.94) 60%,#03060a 100%);
+    backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);text-align:center;z-index:10;overflow:auto}
+  .screen.on{display:flex}
+  .logo{font-size:clamp(34px,10vw,58px);font-weight:900;letter-spacing:.06em;line-height:.95;
+    background:linear-gradient(100deg,#8ff8ea,#b6ff5c 55%,#ffd166);-webkit-background-clip:text;background-clip:text;color:transparent;
+    filter:drop-shadow(0 0 22px rgba(80,230,212,.35))}
+  .logo small{display:block;font-size:.26em;letter-spacing:.5em;color:#9fb7c9;font-weight:600;
+    -webkit-text-fill-color:#9fb7c9;margin-top:10px}
+  .tag{margin:16px 0 6px;color:var(--dim);font-size:14px;max-width:34ch;line-height:1.5}
+  .btn{pointer-events:auto;margin-top:14px;padding:15px 30px;border-radius:16px;border:1px solid rgba(120,230,212,.5);
+    background:linear-gradient(180deg,rgba(80,230,212,.22),rgba(20,60,64,.5));color:#eafffb;font-size:16px;font-weight:700;
+    letter-spacing:.03em;box-shadow:0 10px 30px rgba(0,0,0,.45),0 0 30px rgba(80,230,212,.12);min-width:220px}
+  .btn:active{transform:scale(.97)}
+  .btn.ghost{background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.16);color:#cfe0ee;font-weight:600}
+  .btn.small{font-size:14px;padding:11px 20px;min-width:auto}
+  .hint{margin-top:18px;font-size:12.5px;color:#7d92a6;line-height:1.6;max-width:36ch}
+  .hint b{color:#b9d6e6;font-weight:600}
+  .credits{position:absolute;bottom:calc(env(safe-area-inset-bottom) + 14px);font-size:11px;color:#55677a;letter-spacing:.08em}
+  #loading{position:fixed;inset:0;display:grid;place-items:center;background:#05070c;z-index:50;transition:opacity .5s}
+  #loading.done{opacity:0;pointer-events:none}
+  .loadbar{width:min(62vw,260px);height:3px;background:rgba(255,255,255,.1);border-radius:99px;overflow:hidden;margin-top:18px}
+  .loadbar i{display:block;height:100%;width:6%;background:linear-gradient(90deg,#4fe6d4,#b6ff5c);transition:width .25s}
+  .loadlabel{font-size:12px;color:#7d92a6;letter-spacing:.16em;text-transform:uppercase}
+  .phase{font-size:11px;letter-spacing:.22em;color:var(--cyan);text-transform:uppercase;margin-bottom:8px;opacity:.85}
+  .card{background:rgba(8,14,22,.7);border:1px solid var(--stroke);border-radius:18px;padding:16px 18px;max-width:360px;
+    width:100%;text-align:left;margin-top:12px;font-size:13.5px;line-height:1.55;color:#c6d7e4}
+  .card b{color:#eaf6ff}
+  .stat{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed rgba(255,255,255,.08)}
+  .stat:last-child{border:0}
+  .stat span:last-child{color:var(--gold);font-weight:700}
+  .toggle{display:flex;gap:8px;align-items:center;justify-content:center;margin-top:16px;font-size:13px;color:#9db3c6}
+  .toggle button{pointer-events:auto;padding:8px 14px;border-radius:11px;background:rgba(255,255,255,.05);
+    border:1px solid rgba(255,255,255,.14);color:#dfeaf3;font-size:13px}
+  .toggle button.on{border-color:rgba(120,230,212,.6);background:rgba(80,230,212,.16);color:#d9fff8}
+  @media (min-width:820px){ .hint{max-width:44ch} }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<div id="hud">
+  <div id="topbar">
+    <div class="row">
+      <div class="pill"><span style="color:#93a6bd">₴</span> <span class="money" id="money">0</span></div>
+      <div class="pill task" id="task">Проснись и осмотрись</div>
+      <button class="pill" id="btnPause" style="pointer-events:auto;padding:8px 11px;font-size:15px;line-height:1;
+        background:var(--glass);color:#cfe3ef;border:1px solid var(--stroke);border-radius:14px">❚❚</button>
+    </div>
+  </div>
+  <div class="row" style="position:absolute;left:14px;right:14px;bottom:calc(env(safe-area-inset-bottom) + 160px)">
+    <div class="pill" id="inv" style="font-size:12px">рюкзак: 0/3</div>
+    <div class="pill" id="noise" style="font-size:12px">шум: тихо</div>
+  </div>
+</div>
+<div id="crosshair"></div>
+<div id="suspicion"><i></i></div>
+<div id="prompt"><span class="key">E</span><span id="promptText">Действие</span></div>
+<div id="subtitle"></div>
+<div id="toast"><div class="big"></div><div class="small"></div></div>
+<div id="stick"><div class="nub"></div></div>
+<div id="btns">
+  <button class="abtn" id="btnCrouch">ПРИСЕСТЬ</button>
+  <button class="abtn primary" id="btnUse">ДЕЙСТВИЕ</button>
+</div>
+
+<div class="screen on" id="screenTitle">
+  <div class="logo">ISLAMWORK<small>ТИХАЯ СМЕНА</small></div>
+  <div class="tag">Ты только что переехал в старый дом на окраине. Денег почти нет.
+    Ночью магазин за углом закрывается — но касса, сейф и полки остаются.</div>
+  <button class="btn" id="btnStart">НАЧАТЬ</button>
+  <button class="btn ghost small" id="btnHelp">УПРАВЛЕНИЕ</button>
+  <div class="hint"><b>Совет:</b> на iPhone нажми «Поделиться» → «На экран „Домой“»,
+    и игра запустится как обычное приложение, без адресной строки.</div>
+  <div class="credits">СДЕЛАНО НА ARENA.AI</div>
+</div>
+
+<div class="screen" id="screenHelp">
+  <div class="phase">Управление</div>
+  <div class="card">
+    <div class="stat"><span>Идти</span><span>левый стик на экране</span></div>
+    <div class="stat"><span>Осмотреться</span><span>свайп справа</span></div>
+    <div class="stat"><span>Красться</span><span>кнопка «ПРИСЕСТЬ»</span></div>
+    <div class="stat"><span>Действие</span><span>кнопка «ДЕЙСТВИЕ»</span></div>
+    <div class="stat"><span>На ПК</span><span>WASD + мышь, E, Shift</span></div>
+  </div>
+  <div class="card">
+    <b>Как играть.</b> Осмотрись в доме, забери деньги из ящика и кармана пальто.
+    Выйди на улицу, дойди до магазина. Внутри не шуми и не попадай в конус обзора
+    охранника: шкала подозрения наверху заполнится — тебя заметят.
+    Нужно взять <b>3 товара</b>, обчистить кассу и, если найдёшь код в подсобке, — сейф.
+    У двери подсобки нажми <b>ДЕЙСТВИЕ</b>, чтобы тихо открыть проход.
+  </div>
+  <button class="btn ghost" id="btnHelpBack">НАЗАД</button>
+</div>
+
+<div class="screen" id="screenPause">
+  <div class="phase">Пауза</div>
+  <div class="logo" style="font-size:clamp(26px,7vw,38px)">ISLAMWORK</div>
+  <button class="btn" id="btnResume">ПРОДОЛЖИТЬ</button>
+  <div class="toggle">
+    <button id="btnSound" class="on">ЗВУК: ВКЛ</button>
+    <button id="btnQuality">ГРАФИКА: ВЫСОКАЯ</button>
+  </div>
+  <button class="btn ghost small" id="btnRestart">НАЧАТЬ ЗАНОВО</button>
+  <div class="credits">v1.0 · PWA · работает офлайн</div>
+</div>
+
+<div class="screen" id="screenEnd">
+  <div class="phase" id="endPhase">Ночь закончена</div>
+  <div class="logo" id="endTitle" style="font-size:clamp(28px,8vw,44px)">ГОТОВО</div>
+  <div class="card" id="endCard"></div>
+  <button class="btn" id="btnAgain">СЫГРАТЬ СНОВА</button>
+</div>
+
+<div id="loading">
+  <div style="text-align:center">
+    <div class="logo" style="font-size:clamp(30px,9vw,48px)">ISLAMWORK</div>
+    <div class="loadlabel" style="margin-top:14px" id="loadLabel">ЗАГРУЗКА</div>
+    <div class="loadbar"><i id="loadFill"></i></div>
+  </div>
+</div>
+
+<script type="module" src="game.js"></script>
+</body>
+</html>

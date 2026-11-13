@@ -1,0 +1,20 @@
+{
+  "name": "IslamWork — Тихая смена",
+  "short_name": "IslamWork",
+  "description": "3D стелс-игра от первого лица: проснись в старом доме и тихо поработай в магазине.",
+  "lang": "ru",
+  "dir": "ltr",
+  "start_url": "./?src=pwa",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "portrait",
+  "background_color": "#05070c",
+  "theme_color": "#070b12",
+  "categories": ["games", "entertainment"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-1024.png", "sizes": "1024x1024", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

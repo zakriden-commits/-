@@ -1,0 +1,10 @@
+# Generated build and local QA artifacts
+node_modules/
+dist/
+previews/
+shots/
+coverage/
+
+# Local environment / editor files
+.DS_Store
+*.log
