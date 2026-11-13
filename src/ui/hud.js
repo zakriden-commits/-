@@ -14,9 +14,9 @@ export class HUD {
     this.suspicion = this.$('suspicion');
     this.suspicionFill = this.suspicion.querySelector('i');
     this.subtitleEl = this.$('subtitle');
-    this.toast = this.$('toast');
-    this.toastBig = this.toast.querySelector('.big');
-    this.toastSmall = this.toast.querySelector('.small');
+    this.toastEl = this.$('toast');
+    this.toastBig = this.toastEl.querySelector('.big');
+    this.toastSmall = this.toastEl.querySelector('.small');
     this.stickEl = this.$('stick');
     this.buttons = this.$('btns');
     this.nub = this.stickEl.querySelector('.nub');
@@ -73,7 +73,7 @@ export class HUD {
   toast(big, small = '', duration = 2.2) {
     this.toastBig.textContent = big;
     this.toastSmall.textContent = small;
-    this.toast.classList.add('on');
+    this.toastEl.classList.add('on');
     this.toastTimer = duration;
   }
   update(dt) {
@@ -83,7 +83,7 @@ export class HUD {
     }
     if (this.toastTimer > 0) {
       this.toastTimer -= dt;
-      if (this.toastTimer <= 0) this.toast.classList.remove('on');
+      if (this.toastTimer <= 0) this.toastEl.classList.remove('on');
     }
   }
 }

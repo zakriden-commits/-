@@ -85,7 +85,7 @@ export function buildHouse(scene, assets, colliders, lights, opts) {
 
   const nightstand = makeNightstand(assets);
   nightstand.position.set(-4.9, 0, -3.7);
-  nightstand.rotation.y = -Math.PI / 2;
+  nightstand.rotation.y = Math.PI / 2;
   group.add(nightstand);
   const nightstandCollider = colliders.addBox(-4.9, -3.7, 0.45, 0.5, 'furniture');
 
@@ -360,8 +360,8 @@ export function buildHouse(scene, assets, colliders, lights, opts) {
       ctx.audio.drawer();
       if (!ctx.flags.drawer) {
         ctx.flags.drawer = true;
-        drawer.position.z += 0.26; // walks out toward the room (+local z)
-        nightstandCollider.maxZ += 0.26;
+        drawer.position.z += 0.26; // local +Z points into the room after the stand's rotation
+        nightstandCollider.maxX += 0.26; // local drawer travel is world +X, not world +Z
         ctx.audio.coins();
         return { text: 'В ящике — 120 ₴. Мама оставила на хлеб…', money: 120 };
       }
@@ -430,6 +430,7 @@ export function buildHouse(scene, assets, colliders, lights, opts) {
     bedroomDoorway: new THREE.Vector3(1.2, 0, -2.0),
     bedPosition: new THREE.Vector3(-4.2, 0.6, -5.3),
     bedCollider,
+    nightstandCollider,
     fridgeCollider,
     shelfCollider,
     doorPivot: frontDoorPivot,

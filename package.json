@@ -4,7 +4,7 @@
   "private": true,
   "description": "IslamWork - 3D stealth game for iPhone (PWA)",
   "scripts": {
-    "test": "node tests/world.test.mjs && node tests/playthrough.test.mjs && node tests/wake.test.mjs",
+    "test": "node tests/world.test.mjs && node tests/hud.test.mjs && node tests/playthrough.test.mjs && node tests/wake.test.mjs",
     "build": "node build.mjs",
     "dev": "node build.mjs --watch & node server.mjs",
     "start": "node server.mjs"

@@ -55,23 +55,40 @@ const doorRes = colliders.resolve(1.2, -2.0, 0.3);
 assert.ok(Math.abs(doorRes.z + 2) < 0.4, 'doorway should be free');
 log('bedroom doorway is open');
 
-// Regression: the fridge and bookcase must not seal the route from the
-// bedroom through the kitchen opening into the living room.
-const exitRoute = [[1.2, -2.8], [1.2, -1.3], [1.2, -0.05], [1.2, 0.4], [0.0, 0.4], [-1.0, 0.4]];
-for (let segment = 0; segment < exitRoute.length - 1; segment++) {
-  const [x0, z0] = exitRoute[segment];
-  const [x1, z1] = exitRoute[segment + 1];
-  const steps = Math.ceil(Math.hypot(x1 - x0, z1 - z0) / 0.05);
-  for (let i = 0; i <= steps; i++) {
-    const t = i / steps;
-    const x = x0 + (x1 - x0) * t;
-    const z = z0 + (z1 - z0) * t;
-    assert.equal(colliders.circleHits(x, z, 0.28), null, `house exit route blocked at ${x.toFixed(2)}, ${z.toFixed(2)}`);
+// Regression: the entire route from the actual wake spawn, through the
+// bedroom doorway and kitchen opening, into the living room must stay clear.
+const exitRoute = [
+  [house.spawn.x, house.spawn.z], [1.2, -2.8], [1.2, -1.3],
+  [1.2, -0.05], [1.2, 0.4], [0.0, 0.4], [-1.0, 0.4],
+];
+const assertExitRouteClear = () => {
+  for (let segment = 0; segment < exitRoute.length - 1; segment++) {
+    const [x0, z0] = exitRoute[segment];
+    const [x1, z1] = exitRoute[segment + 1];
+    const steps = Math.ceil(Math.hypot(x1 - x0, z1 - z0) / 0.05);
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const x = x0 + (x1 - x0) * t;
+      const z = z0 + (z1 - z0) * t;
+      assert.equal(colliders.circleHits(x, z, 0.3), null, `house exit route blocked at ${x.toFixed(2)}, ${z.toFixed(2)}`);
+    }
   }
-}
+};
+assertExitRouteClear();
 assert.ok(house.fridgeCollider.minX > 3, 'fridge is kept against the kitchen wall');
 assert.ok(house.shelfCollider.maxX < 0, 'bookcase is moved away from the doorway');
 log('bedroom → kitchen opening → living room route is clear');
+
+const drawerAction = house.interactions.find((it) => it.id === 'drawer');
+const drawerFlags = {};
+const originalDrawerMaxX = house.nightstandCollider.maxX;
+const originalDrawerMaxZ = house.nightstandCollider.maxZ;
+drawerAction.onUse({ flags: drawerFlags, audio: { drawer() {}, coins() {} } });
+assert.equal(drawerFlags.drawer, true, 'the starter drawer opens');
+assert.equal(house.nightstandCollider.maxX, originalDrawerMaxX + 0.26, 'the opened drawer collider follows its world X travel');
+assert.equal(house.nightstandCollider.maxZ, originalDrawerMaxZ, 'opening the drawer does not create a false wall in world Z');
+assertExitRouteClear();
+log('collecting the starter cash keeps the doorway route clear');
 
 console.log('\nSIGHT / STEALTH');
 const game = {
@@ -124,7 +141,7 @@ log('stockroom door opens and its passage remains traversable');
 console.log('\nPLAYER MOVEMENT');
 const cam = new THREE.PerspectiveCamera(72, 0.5, 0.06, 200);
 const player = new Player(assets, cam, colliders);
-player.teleport(-1, 0, 0);
+player.teleport(-10, -10, 0);
 const inputStub = {
   move: { x: 0, y: 1 }, sneak: false, run: false,
   sample() { return this.move; }, consumeLook() { return { dx: 0, dy: 0 }; },
@@ -132,19 +149,33 @@ const inputStub = {
 };
 const startZ = player.position.z;
 for (let i = 0; i < 60; i++) player.update(1 / 60, inputStub, {});
-// yaw = 0 => forward is -Z, but move.y = 1 pushes along +Z
-const walked = player.position.z - startZ;
-log(`walked ${walked.toFixed(2)} m in 1s (speed ${Math.hypot(player.velocity.x, player.velocity.z).toFixed(2)} m/s)`);
-assert.ok(Math.abs(walked) > 1.5, 'player walks at a sane pace');
-const walkSpeed = Math.abs(walked);
+// yaw = 0 => forward is -Z, and move.y = 1 must move toward -Z.
+const walked = startZ - player.position.z;
+log(`forward walked ${walked.toFixed(2)} m in 1s (speed ${Math.hypot(player.velocity.x, player.velocity.z).toFixed(2)} m/s)`);
+assert.ok(walked > 1.5, 'forward input moves toward -Z when yaw is zero');
+const walkSpeed = walked;
 // crouch reduces speed
-player.teleport(-1, 0, -3);
+player.teleport(-10, -10, 0);
 const c0 = player.position.z;
 inputStub.sneak = true;
 for (let i = 0; i < 60; i++) player.update(1 / 60, inputStub, { forceSneak: true });
 const crouchDist = Math.abs(c0 - player.position.z);
 log(`crouch-walked ${crouchDist.toFixed(2)} m in 1s`);
 assert.ok(crouchDist < walkSpeed, 'crouching is slower');
+
+// The real wake camera faces the bedroom exit; holding forward must walk
+// through that doorway instead of into the bed/wall behind the player.
+inputStub.sneak = false;
+inputStub.move = { x: 0, y: 1 };
+const doorYaw = Math.atan2(
+  -(house.bedroomDoorway.x - house.spawn.x),
+  -(house.bedroomDoorway.z - house.spawn.z),
+);
+player.teleport(house.spawn.x, house.spawn.z, doorYaw);
+for (let i = 0; i < 150; i++) player.update(1 / 60, inputStub, {});
+assert.ok(player.position.x > house.spawn.x + 4.5, 'forward movement follows the wake camera toward the bedroom exit');
+assert.ok(player.position.z > house.spawn.z + 2.2, 'the player clears the doorway instead of hitting an invisible wall');
+log(`woke and walked through the bedroom exit to (${player.position.x.toFixed(2)}, ${player.position.z.toFixed(2)})`);
 
 console.log('\nNPC ANIMATION');
 const npc = new NPC(assets, { seed: 5, route: [[0, 0], [0, 3]], look: { skin: 0xc79068, height: 1 } });

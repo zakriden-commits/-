@@ -34,7 +34,7 @@ class Game {
     this.renderer = new THREE.WebGLRenderer({
       antialias: !isTouch, powerPreference: 'high-performance', alpha: false, stencil: false,
     });
-    const dprCap = isTouch ? 1.25 : 2;
+    const dprCap = isTouch ? 1.5 : 2;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, dprCap));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.shadowMap.enabled = !isTouch;
@@ -62,8 +62,8 @@ class Game {
     this.flags = {};
     this.state = 'title';
     this.time = 0;
-    // Phones start in a battery-friendly profile; High remains available in Pause.
-    this.quality = isTouch ? 'low' : 'high';
+    // A balanced, sharper profile is the default; Fast remains available in Pause.
+    this.quality = 'high';
     this.muted = false;
 
     this.pressBuffer = 0;
@@ -100,8 +100,7 @@ class Game {
     this.clock.start();
     const qualityOverride = this._forceQuality === 'high' || this._forceQuality === 'low'
       ? this._forceQuality : null;
-    if (qualityOverride) this.setQuality(qualityOverride);
-    else if (isTouch) this.setQuality('low');
+    this.setQuality(qualityOverride || this.quality);
     this.renderer.setAnimationLoop(() => this._frame());
   }
 
@@ -381,15 +380,22 @@ class Game {
   setQuality(q) {
     this.quality = q;
     const low = q === 'low';
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, low ? 1.25 : 2));
+    const dprCap = low ? (isTouch ? 1.0 : 1.25) : (isTouch ? 1.5 : 2);
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, dprCap));
     this.composer?.setPixelRatio(this.renderer.getPixelRatio());
-    if (this.moonLight) this.moonLight.castShadow = !low;
+    if (this.moonLight) {
+      this.moonLight.castShadow = !low;
+      const shadowSize = low ? 512 : isTouch ? 1024 : 2048;
+      this.moonLight.shadow.mapSize.set(shadowSize, shadowSize);
+    }
     this.renderer.shadowMap.enabled = !low;
-    if (this.bloom) this.bloom.enabled = !low;
-    if (this.grade?.uniforms.grain) this.grade.uniforms.grain.value = low ? 0.022 : 0.045;
+    if (this.bloom) {
+      this.bloom.enabled = !low;
+      this.bloom.strength = low ? 0 : 0.38;
+    }
+    if (this.grade?.uniforms.grain) this.grade.uniforms.grain.value = low ? 0.006 : 0.012;
     const qualityButton = screenEl('btnQuality');
     if (qualityButton) qualityButton.textContent = low ? 'ГРАФИКА: БЫСТРАЯ' : 'ГРАФИКА: ВЫСОКАЯ';
-    this.scene.traverse((o) => { if (o.isMesh) o.material && (o.material.needsUpdate = true); });
     this._resize();
   }
 

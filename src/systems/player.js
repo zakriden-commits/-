@@ -53,7 +53,8 @@ export class Player {
 
   _buildHands() {
     const g = new THREE.Group();
-    const skin = new THREE.MeshStandardMaterial({ color: 0xc18c67, roughness: 0.72 });
+    const skin = new THREE.MeshStandardMaterial({ color: 0xb98260, roughness: 0.82 });
+    const skinCrease = new THREE.LineBasicMaterial({ color: 0x76513d, transparent: true, opacity: 0.38 });
     const sleeve = new THREE.MeshStandardMaterial({ color: 0x34404d, roughness: 0.94 });
     const cuff = new THREE.MeshStandardMaterial({ color: 0x27313d, roughness: 0.88 });
     const up = new THREE.Vector3(0, 1, 0);
@@ -78,41 +79,96 @@ export class Player {
       mesh.quaternion.setFromUnitVectors(up, direction.normalize());
       return mesh;
     };
+    const extrude = (shape) => new THREE.ExtrudeGeometry(shape, {
+      depth: 0.014, bevelEnabled: true, bevelSegments: 3, steps: 1,
+      bevelSize: 0.0025, bevelThickness: 0.0025, curveSegments: 6,
+    });
 
     const mkArm = (side) => {
       const arm = new THREE.Group();
-      // The elbow stays outside the portrait frame; a slim sleeve angles into
-      // a small, relaxed hand near the lower edge. Fingers sit together, with
-      // no outward-pointing thumb that can read as a crab claw.
-      const elbow = new THREE.Vector3(side * 0.31, -0.74, -0.32);
-      const wrist = new THREE.Vector3(side * 0.13, -0.36, -0.58);
+      // Sleeves enter from below the frame and meet the hands at the wrist.
+      // The hands are a shallow, rounded silhouette with four grouped fingers
+      // and a tucked thumb, not disconnected spherical "claws".
+      const elbow = new THREE.Vector3(side * 0.38, -0.78, -0.45);
+      const wrist = new THREE.Vector3(side * 0.17, -0.385, -0.76);
       const reach = new THREE.Vector3().subVectors(wrist, elbow).normalize();
-      arm.add(capsuleBetween(elbow, wrist, 0.041, sleeve));
+      arm.add(capsuleBetween(elbow, wrist, 0.032, sleeve));
 
-      const cuffStart = wrist.clone().addScaledVector(reach, -0.06);
-      arm.add(cylinderBetween(cuffStart, wrist, 0.043, cuff));
+      const cuffStart = wrist.clone().addScaledVector(reach, -0.065);
+      arm.add(cylinderBetween(cuffStart, wrist, 0.035, cuff));
 
-      const palmCenter = wrist.clone().addScaledVector(reach, 0.04);
-      const palm = new THREE.Mesh(new THREE.SphereGeometry(0.038, 16, 12), skin);
-      palm.scale.set(0.86, 0.98, 0.86);
-      palm.position.copy(palmCenter);
-      arm.add(palm);
+      const hand = new THREE.Group();
+      hand.position.copy(wrist).addScaledVector(reach, 0.006);
+      hand.scale.x = side; // mirror the palm so both thumbs point inward
 
-      // Small, touching knuckles read as a relaxed hand instead of four long
-      // prongs. A tucked thumb sits against the inside edge of each palm.
-      for (let i = 0; i < 4; i++) {
-        const knuckle = new THREE.Mesh(new THREE.SphereGeometry(0.01, 10, 8), skin);
-        knuckle.scale.set(0.88, 1.0, 0.9);
-        knuckle.position.copy(palmCenter)
-          .addScaledVector(reach, 0.024)
-          .add(new THREE.Vector3((i - 1.5) * 0.018, 0, 0));
-        arm.add(knuckle);
+      const palmShape = new THREE.Shape();
+      palmShape.moveTo(-0.021, 0.018)
+        .quadraticCurveTo(-0.035, 0.014, -0.036, -0.004)
+        .lineTo(-0.038, -0.022)
+        .quadraticCurveTo(-0.039, -0.030, -0.033, -0.031)
+        // little finger
+        .lineTo(-0.037, -0.073)
+        .quadraticCurveTo(-0.037, -0.083, -0.029, -0.084)
+        .quadraticCurveTo(-0.021, -0.084, -0.020, -0.075)
+        .lineTo(-0.020, -0.049)
+        // first finger web
+        .quadraticCurveTo(-0.020, -0.043, -0.017, -0.043)
+        // ring finger
+        .quadraticCurveTo(-0.012, -0.043, -0.012, -0.049)
+        .lineTo(-0.012, -0.092)
+        .quadraticCurveTo(-0.012, -0.102, -0.004, -0.103)
+        .quadraticCurveTo(0.004, -0.103, 0.004, -0.092)
+        .lineTo(0.004, -0.049)
+        // second finger web
+        .quadraticCurveTo(0.004, -0.043, 0.008, -0.043)
+        // middle finger
+        .quadraticCurveTo(0.013, -0.043, 0.013, -0.049)
+        .lineTo(0.013, -0.083)
+        .quadraticCurveTo(0.013, -0.092, 0.021, -0.092)
+        .quadraticCurveTo(0.029, -0.092, 0.029, -0.083)
+        .lineTo(0.029, -0.049)
+        // third finger web and palm edge
+        .quadraticCurveTo(0.029, -0.043, 0.033, -0.043)
+        .quadraticCurveTo(0.038, -0.043, 0.038, -0.050)
+        .lineTo(0.037, -0.026)
+        .quadraticCurveTo(0.038, -0.014, 0.032, -0.004)
+        .lineTo(0.026, 0.012)
+        .quadraticCurveTo(0.021, 0.020, 0.013, 0.021)
+        .lineTo(-0.012, 0.022)
+        .quadraticCurveTo(-0.019, 0.022, -0.021, 0.018)
+        .closePath();
+      const palmMesh = new THREE.Mesh(extrude(palmShape), skin);
+      palmMesh.castShadow = false;
+      hand.add(palmMesh);
+
+      // A small overlapping thumb rests along the inner edge of the palm.
+      const thumbShape = new THREE.Shape();
+      thumbShape.moveTo(-0.022, 0.001)
+        .quadraticCurveTo(-0.034, -0.003, -0.039, -0.016)
+        .quadraticCurveTo(-0.043, -0.027, -0.036, -0.034)
+        .quadraticCurveTo(-0.029, -0.037, -0.025, -0.029)
+        .lineTo(-0.015, -0.015)
+        .quadraticCurveTo(-0.012, -0.007, -0.017, -0.001)
+        .closePath();
+      const thumbMesh = new THREE.Mesh(extrude(thumbShape), skin);
+      thumbMesh.position.z = 0.006;
+      thumbMesh.castShadow = false;
+      hand.add(thumbMesh);
+
+      // Fine knuckle folds make the joined fingers read at phone scale.
+      for (const [x1, x2, y] of [
+        [-0.034, -0.025, -0.054], [-0.016, -0.006, -0.061],
+        [0.001, 0.011, -0.061], [0.021, 0.031, -0.056],
+      ]) {
+        const crease = new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(x1, y, 0.018), new THREE.Vector3(x2, y, 0.018),
+        ]);
+        const line = new THREE.Line(crease, skinCrease);
+        line.frustumCulled = false;
+        hand.add(line);
       }
-      const thumb = new THREE.Mesh(new THREE.SphereGeometry(0.014, 12, 10), skin);
-      thumb.scale.set(1.0, 0.88, 0.9);
-      thumb.position.copy(palmCenter).add(new THREE.Vector3(-side * 0.024, -0.01, 0.004));
-      arm.add(thumb);
 
+      arm.add(hand);
       arm.traverse((o) => { if (o.isMesh) o.castShadow = false; });
       return arm;
     };
@@ -164,8 +220,10 @@ export class Player {
     // forward is -Z in camera space
     const fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw);
     const rx = Math.cos(this.yaw), rz = -Math.sin(this.yaw);
-    const dirX = fx * -move.y + rx * move.x;
-    const dirZ = fz * -move.y + rz * move.x;
+    // `move.y` is positive for W / an upward stick tilt, so it follows the
+    // camera-forward vector (`fx`, `fz`) rather than walking backward.
+    const dirX = fx * move.y + rx * move.x;
+    const dirZ = fz * move.y + rz * move.x;
     const dl = Math.hypot(dirX, dirZ);
     let wishX = 0, wishZ = 0;
     if (dl > 1e-4 && mag > 0.01) { wishX = dirX / dl; wishZ = dirZ / dl; }
